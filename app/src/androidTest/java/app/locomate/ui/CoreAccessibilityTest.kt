@@ -5,7 +5,14 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -15,6 +22,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.accessibility.enableAccessibilityChecks
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -26,9 +34,11 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.tryPerformAccessibilityChecks
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
@@ -74,6 +84,52 @@ class CoreAccessibilityTest {
         }
         compose.onNodeWithContentDescription("Search trains").assertHasClickAction().tryPerformAccessibilityChecks()
         assertVisibleTextFits()
+    }
+
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @Test fun originCalendarAndQuickDatesRemainReachableAtTwoHundredPercentText() {
+        var date by mutableStateOf("2026-10-02")
+        var selectedDayDescription = ""
+        compose.setContent { AuditTheme {
+            selectedDayDescription = androidx.compose.material3.DatePickerDefaults.dateFormatter().formatDate(
+                java.time.LocalDate.parse("2019-02-15").atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli(),
+                compose.activity.resources.configuration.locales[0], forContentDescription = true).orEmpty()
+            NavigationScaffold(Tab.Journeys, {}, {}, searchActive = true) { inset ->
+                Column(Modifier.fillMaxSize().padding(bottom = inset).verticalScroll(rememberScrollState()).padding(20.dp)) {
+                    OriginDatePicker(date, { date = it })
+                }
+            }
+        } }
+        compose.enableAccessibilityChecks()
+        compose.onNodeWithContentDescription("Yest").performClick().assertIsSelected().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("origin-dates-200")
+        val input = openOriginDateInput(compose, beforeInput = {
+            compose.onNodeWithText("Enter date").performScrollTo().assertIsDisplayed().tryPerformAccessibilityChecks()
+            assertVisibleTextFits()
+            saveScreenshot("origin-calendar-days-200")
+        })
+        input.performTextReplacement("2026-02-30")
+        compose.onNodeWithText("Use date").assertIsNotEnabled()
+        compose.onNodeWithText("Enter a valid date as YYYY-MM-DD.").performScrollTo()
+            .assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("origin-invalid-200")
+        input.performScrollTo().performTextReplacement("2019-02-15")
+        compose.onNodeWithText("Use date").assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("origin-calendar-200")
+        compose.onNodeWithText("Show calendar").performScrollTo().performClick()
+        assertTrue(selectedDayDescription.isNotBlank())
+        compose.onNodeWithText(selectedDayDescription, substring = true).assertIsDisplayed()
+            .assertIsSelected().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("origin-calendar-return-200")
+        compose.onNodeWithText("Use date").performClick()
+        compose.runOnIdle { assertEquals("2019-02-15", date) }
+        compose.onNodeWithContentDescription("Choose origin date").assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("origin-selected-200")
     }
 
     @Test fun journeyDetailsCanBeExpandedWithoutDragging() {

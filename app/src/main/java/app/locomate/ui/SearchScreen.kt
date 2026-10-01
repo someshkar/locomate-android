@@ -11,9 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,13 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,27 +111,8 @@ fun SearchScreen(
             if (gateway.configured) {
                 item("date") {
                     Column {
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = date,
-                            onValueChange = { date = it.take(10) },
-                            label = { Text("Origin date · India time", color = LM.Ink2) },
-                            supportingText = { Text("YYYY-MM-DD", color = LM.Ink3) },
-                            isError = runCatching { LocalDate.parse(date) }.isFailure,
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = LM.Raised,
-                                unfocusedContainerColor = LM.Raised,
-                                errorContainerColor = LM.Raised,
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                errorBorderColor = LM.Error,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Spacer(Modifier.height(16.dp))
+                        OriginDatePicker(date, { date = it }, onOpen = { focus.clearFocus() })
                     }
                 }
             }

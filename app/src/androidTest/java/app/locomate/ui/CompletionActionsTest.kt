@@ -20,6 +20,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assert
 import androidx.compose.material3.Text
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -45,13 +46,20 @@ import org.junit.runner.RunWith
 class CompletionActionsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
     @Test fun searchPageKeepsNavigationAboveKeyboardAndOpensTheSelectedDate() {
         SearchGateway().use { server ->
             val gateway = RailGateway(compose.activity, server.url)
             var open by mutableStateOf(true)
             var tab by mutableStateOf(Tab.Passport)
             var selected: Pair<String, String>? = null
+            val today = java.time.LocalDate.parse(RailGateway.indiaToday())
+            val calendarDate = today.withDayOfMonth(if (today.dayOfMonth <= 10) 20 else 1)
+            var calendarDayDescription = ""
             compose.setContent { LocomateTheme {
+                calendarDayDescription = androidx.compose.material3.DatePickerDefaults.dateFormatter().formatDate(
+                    calendarDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli(),
+                    compose.activity.resources.configuration.locales[0], forContentDescription = true).orEmpty()
                 NavigationScaffold(tab, { tab = it; open = false }, { open = true }, searchActive = open) { inset ->
                     if (open) SearchScreen(emptyList(), gateway, {}, { train, date ->
                         selected = train.number to date; open = false
@@ -72,9 +80,22 @@ class CompletionActionsTest {
             screenshot("search-keyboard")
             field.performImeAction()
             compose.waitUntil(5_000) { keyboardHeight() == 0 }
-            val dateField = compose.onNodeWithText("Origin date · India time").performScrollTo()
-            dateField.performTextReplacement("2026-09-30")
-            dateField.performImeAction()
+            compose.onNodeWithContentDescription("Yest").performScrollTo().performClick().assertIsSelected()
+            val priorDate = java.time.LocalDate.parse(RailGateway.indiaToday()).minusDays(1).toString()
+            openOriginDateInput(compose).performTextReplacement("2026-02-30")
+            compose.onNodeWithText("Use date").assertIsNotEnabled()
+            screenshot("search-invalid-calendar")
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithContentDescription("Choose origin date").assert(
+                androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                    androidx.compose.ui.semantics.SemanticsProperties.StateDescription, priorDate))
+            compose.onNodeWithContentDescription("Today").performScrollTo().performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Choose origin date").performScrollTo().performClick()
+            assertTrue(calendarDayDescription.isNotBlank())
+            // Material exposes a day's full spoken date as Text, rather than ContentDescription.
+            compose.onNodeWithText(calendarDayDescription, substring = true).assertIsEnabled().performClick()
+            screenshot("search-native-calendar")
+            compose.onNodeWithText("Use date").assertIsEnabled().performClick()
             compose.waitUntil(5_000) { keyboardHeight() == 0 }
             awaitText("First Express")
             val result = compose.onNodeWithText("First Express").performScrollTo().assertIsDisplayed()
@@ -82,7 +103,10 @@ class CompletionActionsTest {
                 < compose.onNodeWithContentDescription("Search trains").fetchSemanticsNode().boundsInRoot.top)
             screenshot("search-result")
             result.performClick()
-            compose.runOnIdle { assertEquals("12951" to "2026-09-30", selected) }
+            compose.runOnIdle {
+                assertEquals("12951" to calendarDate.toString(), selected)
+                assertEquals(listOf("12951"), server.completedQueries.toList())
+            }
             compose.onNodeWithText("Returned to Passport").assertExists()
             compose.onNodeWithContentDescription("Search trains").performClick()
             compose.onNodeWithContentDescription("Explore").performClick().assertIsSelected()

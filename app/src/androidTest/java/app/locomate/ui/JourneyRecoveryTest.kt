@@ -54,7 +54,7 @@ class JourneyRecoveryTest {
                 installRoot(server.url)
                 compose.onNodeWithContentDescription("Search trains").performClick()
                 compose.onNodeWithText("Train name or number").performTextInput("12951")
-                compose.onNodeWithText("Origin date · India time").performTextReplacement("2026-10-01")
+                chooseOriginDate(compose, "2026-10-01")
                 awaitText("Recovery Express")
                 compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
                 awaitText("SCHEDULED · NO LIVE ETA")
