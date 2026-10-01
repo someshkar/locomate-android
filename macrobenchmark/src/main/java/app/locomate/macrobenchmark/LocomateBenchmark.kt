@@ -122,8 +122,7 @@ class LocomateBenchmark {
             assertNotNull("Journey content must be scrollable", content)
             val dock = device.findObject(By.desc("Passport"))
             assertNotNull("Navigation dock must be visible", dock)
-            // The list extends behind the floating dock. Start gestures in its
-            // unobscured region instead of dragging a navigation button.
+            // Keep gestures inside the list's reading area above the dock.
             content.setGestureMargins(24, 24, 24,
                 maxOf(24, content.visibleBounds.bottom - dock.visibleBounds.top + 24))
             val beforeScroll = content.findObjects(By.text(Pattern.compile(".+")))

@@ -493,6 +493,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
             when (current) {
                 Tab.Journeys -> JourneyScreen(
                     route = selectedRoute,
+                    bottomInset = dockInset,
                     railGateway = gateway,
                     plan = selectedPlan,
                     productionMode = gateway.configured && selectedPreview == null,

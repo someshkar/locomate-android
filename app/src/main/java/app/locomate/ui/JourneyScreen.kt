@@ -22,13 +22,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -51,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
@@ -67,11 +66,16 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.RoutePreview
 import app.locomate.data.RouteStop
 import app.locomate.data.JourneyPlan
+import app.locomate.data.JourneySummaryClock
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import app.locomate.data.RailTimeText
 import app.locomate.data.RailGateway
 import app.locomate.ui.theme.LM
@@ -91,7 +95,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                   message: String? = null, statusCardEnabled: Boolean = false, onSave: () -> Unit,
                   onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
                   onSearch: () -> Unit = {}, onStatusCard: () -> Unit = {},
-                  alertStatus: String? = null, onAlerts: () -> Unit = {}, railGateway: RailGateway? = null) {
+                  alertStatus: String? = null, onAlerts: () -> Unit = {}, railGateway: RailGateway? = null,
+                  bottomInset: Dp = 0.dp) {
     val haptics = LocalHapticFeedback.current
     val (reliability, retryReliability) = rememberTrainReliability(route, railGateway)
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
@@ -116,20 +121,6 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
             )
         )
 
-        Surface(
-            color = Color(0xB51D2028),
-            shape = RoundedCornerShape(30.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-            shadowElevation = 16.dp,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 16.dp)
-        ) {
-            Row(Modifier.padding(horizontal = 17.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(route?.trainNumber ?: "LOCOMATE", color = LM.Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(if (productionMode) "  ·  RAIL GATEWAY" else "  ·  ROUTE PREVIEW",
-                    color = LM.Ink2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
-            }
-        }
-
         val density = LocalDensity.current
         val screenHeightPx = with(density) { maxHeight.toPx() }
         val collapsedTop = screenHeightPx * 0.47f
@@ -139,9 +130,12 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         var settleJob by remember { mutableStateOf<Job?>(null) }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val expanded = sheetTop < (collapsedTop + expandedTop) / 2f
+        // The surface extends below the screen; only the content reserves that
+        // hidden portion and the actual navigation dock above the screen edge.
+        val hiddenSheetHeight = with(density) { sheetTop.toDp() } - maxHeight * 0.10f
 
         Surface(
-            color = LM.Glass,
+            color = Color.Transparent,
             shape = RoundedCornerShape(topStart = LM.RadiusSheet, topEnd = LM.RadiusSheet),
             shadowElevation = 28.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
@@ -149,9 +143,11 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                 .height(maxHeight * 0.90f)
                 .offset { IntOffset(0, sheetTop.roundToInt()) }
         ) {
-            Column {
+            Column(Modifier.background(Brush.verticalGradient(listOf(Color(0xF00B0C16), Color(0xFA090A12))))
+                .padding(bottom = (hiddenSheetHeight + bottomInset).coerceAtLeast(0.dp))) {
+                // Scrolled action touch bounds must not occlude this fixed header.
                 Column(
-                    Modifier.fillMaxWidth().pointerInput(collapsedTop, expandedTop) {
+                    Modifier.fillMaxWidth().zIndex(1f).pointerInput(collapsedTop, expandedTop) {
                         detectVerticalDragGestures(
                             onDragStart = { settleJob?.cancel() },
                             onVerticalDrag = { change, amount ->
@@ -190,13 +186,14 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("My Journeys", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp,
                             modifier = Modifier.weight(1f).semantics { heading() })
-                        Surface(onClick = onSave, enabled = route != null,
-                            color = Color.White.copy(alpha = 0.09f), shape = CircleShape,
-                            modifier = Modifier.size(48.dp).semantics {
+                        Box(Modifier.size(48.dp)
+                            .clickable(enabled = route != null, role = Role.Button, onClick = onSave)
+                            .semantics {
                                 contentDescription = if (saved) "Remove saved journey" else "Save journey"
                                 stateDescription = if (saved) "Saved" else "Not saved"
-                            }) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            }, contentAlignment = Alignment.Center) {
+                            Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.White.copy(alpha = 0.09f)),
+                                contentAlignment = Alignment.Center) {
                                 Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                                     contentDescription = null,
                                     tint = LM.Ink, modifier = Modifier.size(22.dp))
@@ -227,11 +224,12 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                                     fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
                             }
                         }
-                        Spacer(Modifier.height(160.dp))
+                        Spacer(Modifier.height(24.dp))
                     } else {
-                    Surface(color = LM.Elevated, shape = RoundedCornerShape(LM.RadiusCard),
+                    Surface(color = Color.Black.copy(alpha = 0.12f), shape = RoundedCornerShape(22.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                         modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(20.dp)) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("${route.trainNumber} · ${route.displayName}",
@@ -241,8 +239,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     }
                     Spacer(Modifier.height(12.dp))
                     ScheduledDepartureCountdown(route, segment)
-                    Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 21.sp,
-                        fontWeight = FontWeight.SemiBold, lineHeight = 24.sp)
+                    Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold, lineHeight = 22.sp)
                     Spacer(Modifier.height(3.dp))
                     Text(if (route.isPreview) "Historical timetable · no live ETA"
                         else message ?: route.sourceDetail, color = LM.Ink3, fontSize = 13.sp)
@@ -254,25 +252,25 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Spacer(Modifier.height(16.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(LM.Hairline))
                     Spacer(Modifier.height(14.dp))
+                    val stale = route.statusLabel.startsWith("STALE")
+                    val boardCall = boarding ?: route.calls.firstOrNull()
+                    val leaveCall = alighting ?: route.calls.lastOrNull()
+                    val boardClock = JourneySummaryClock.forStop(boardCall, departure = true,
+                        preview = route.isPreview, stale = stale,
+                        originDeparture = route.departure.takeIf { fullRoute || boardCall?.code == route.originCode })
+                    val leaveClock = JourneySummaryClock.forStop(leaveCall, departure = false,
+                        preview = route.isPreview, stale = stale)
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp), maxItemsInEachRow = if (largeText) 1 else 3) {
-                        StationTime(boarding?.code ?: route?.originCode ?: "—",
-                            if (fullRoute) route?.departure ?: "—" else boarding?.scheduledDeparture ?: boarding?.scheduledArrival ?: "—",
-                            "Scheduled boarding", if (route?.isPreview == true) Color(0xFFBCA7FF) else LM.Ink)
-                        if (!largeText) Icon(Icons.Outlined.ArrowForward, contentDescription = null,
-                            tint = LM.Ink3, modifier = Modifier.size(20.dp))
-                        val arrivalTime = if (fullRoute) route?.let { it.arrival + if (it.arrivalDay > 1) " +${it.arrivalDay - 1}" else "" } ?: "—"
-                            else alighting?.forecastP50 ?: alighting?.scheduledArrival ?: "—"
-                        StationTime(alighting?.code ?: route?.destinationCode ?: "—", arrivalTime,
-                            if (!fullRoute && alighting?.forecastP50 != null) "Predicted arrival" else "Arrival",
-                            if (route?.isPreview == true) Color(0xFFBCA7FF)
-                            else if (alighting?.forecastP50 != null || route?.statusLabel?.startsWith("PREDICTED") == true) Color(0xFFFFB84D)
-                            else LM.Ink)
+                        verticalArrangement = Arrangement.spacedBy(14.dp), maxItemsInEachRow = if (largeText) 1 else 2) {
+                        StationTime(boardCall?.code ?: route.originCode, boardCall?.name ?: route.originName, boardClock, largeText)
+                        StationTime(leaveCall?.code ?: route.destinationCode, leaveCall?.name ?: route.destinationName, leaveClock, largeText,
+                            daySuffix = summaryDaySuffix(route, boardCall, leaveCall, leaveClock, fullRoute))
                     }
+
                     }
                     }
                     Spacer(Modifier.height(18.dp))
-                    if (route != null && route.calls.size > 1) {
+                    if (expanded && route != null && route.calls.size > 1) {
                         Surface(onClick = onEdit, color = Color(0xFF252830),
                             shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().semantics {
                                 contentDescription = "Edit boarding and alighting stops. Board at ${boarding?.code ?: route.originCode}, leave at ${alighting?.code ?: route.destinationCode}"
@@ -302,7 +300,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Spacer(Modifier.height(18.dp))
                     if (route != null) {
                         Surface(onClick = onAlerts, color = Color(0xFF173346),
-                            shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                            shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()
+                                .semantics { contentDescription = "Journey alerts" }) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = LM.Accent)
                                 Column(Modifier.padding(start = 12.dp)) {
@@ -332,7 +331,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             if (!route.isPreview && calendarStart != null && calendarEnd != null) {
                                 Surface(onClick = onCalendar,
                                     color = Color(0xFF242832), shape = RoundedCornerShape(18.dp),
-                                    modifier = Modifier.weight(1f)) {
+                                    modifier = Modifier.weight(1f).semantics { contentDescription = "Add journey to calendar" }) {
                                     Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
                                         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = LM.Accent,
@@ -343,7 +342,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                                 }
                             }
                             Surface(onClick = onShare, color = Color(0xFF242832),
-                                shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f)) {
+                                shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f)
+                                    .semantics { contentDescription = "Share journey" }) {
                                 Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
                                     horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Outlined.Share, contentDescription = null, tint = LM.Accent,
@@ -372,7 +372,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             TimelineStop(stop, route.isPreview, route.statusLabel.startsWith("STALE"), index == 0)
                         }
                     }
-                    item(key = "bottom-space") { Spacer(Modifier.height(160.dp)) }
+                    item(key = "bottom-space") { Spacer(Modifier.height(24.dp)) }
                 }
             }
         }
@@ -395,7 +395,18 @@ private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?)
         }
     }
     RailTimeText.untilScheduledDeparture(boarding.departureAtMillis, now)?.let { countdown ->
-        Text(countdown, color = LM.Ink, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
+        val styled = buildAnnotatedString {
+            var cursor = 0
+            for (match in Regex("[0-9]+").findAll(countdown)) {
+                append(countdown.substring(cursor, match.range.first))
+                withStyle(SpanStyle(fontSize = 27.sp, fontWeight = FontWeight.ExtraBold, color = LM.Ink)) {
+                    append(match.value)
+                }
+                cursor = match.range.last + 1
+            }
+            append(countdown.substring(cursor))
+        }
+        Text(styled, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
         Spacer(Modifier.height(5.dp))
         Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}Scheduled boarding at ${boarding.stationCode}",
             color = LM.Ink2, fontSize = 12.sp)
@@ -493,12 +504,36 @@ private fun PlatformBadge(platform: String, stale: Boolean) {
 }
 
 @Composable
-private fun StationTime(code: String, time: String, label: String, tone: Color) {
-    Column(Modifier.semantics(mergeDescendants = true) {}) {
-        Text(code, color = LM.Ink2, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-            fontFamily = PlexMono, letterSpacing = 1.sp)
-        Spacer(Modifier.height(4.dp))
-        Text(time, color = tone, fontSize = 20.sp, fontWeight = FontWeight.Medium, fontFamily = PlexMono)
-        Text(label, color = LM.Ink3, fontSize = 12.sp)
+private fun StationTime(code: String, name: String, clock: JourneySummaryClock, largeText: Boolean, daySuffix: String = "") {
+    val tone = when (clock.evidence) {
+        JourneySummaryClock.Evidence.Scheduled -> LM.Ink
+        JourneySummaryClock.Evidence.Estimated -> Color(0xFFFFB84D)
+        JourneySummaryClock.Evidence.Recorded -> Color(0xFF37C982)
     }
+    Column(Modifier.semantics(mergeDescendants = true) { contentDescription = name }) {
+        if (largeText) {
+            Text(code, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlexMono)
+            Text("${clock.time ?: "—"}$daySuffix", color = tone, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(code, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = PlexMono)
+                Text("${clock.time ?: "—"}$daySuffix", color = tone, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(clock.label, color = LM.Ink3, fontSize = 11.sp)
+    }
+}
+
+private fun summaryDaySuffix(route: RoutePreview, board: RouteStop?, leave: RouteStop?,
+                             clock: JourneySummaryClock, fullRoute: Boolean): String {
+    if (clock.evidence != JourneySummaryClock.Evidence.Scheduled) return ""
+    if (route.isPreview && fullRoute) return if (route.arrivalDay > 1) " +${route.arrivalDay - 1}" else ""
+    val start = board?.scheduledDepartureMillis ?: route.departureInstantMillis.takeIf { fullRoute } ?: return ""
+    val end = leave?.scheduledArrivalMillis ?: return ""
+    val india = java.time.ZoneId.of("Asia/Kolkata")
+    val days = java.time.temporal.ChronoUnit.DAYS.between(
+        java.time.Instant.ofEpochMilli(start).atZone(india).toLocalDate(),
+        java.time.Instant.ofEpochMilli(end).atZone(india).toLocalDate())
+    return if (days > 0) " +$days" else ""
 }

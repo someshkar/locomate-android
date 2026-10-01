@@ -77,7 +77,11 @@ class CoreAccessibilityTest {
 
     @Test fun journeyDetailsCanBeExpandedWithoutDragging() {
         val route = PreviewRoutes.load(compose.activity).first()
-        compose.setContent { AuditTheme { JourneyScreen(route, saved = false, onSave = {}) } }
+        compose.setContent { AuditTheme {
+            NavigationScaffold(Tab.Journeys, {}, {}) { inset ->
+                JourneyScreen(route, saved = false, onSave = {}, bottomInset = inset)
+            }
+        } }
         compose.enableAccessibilityChecks()
         compose.onNodeWithText("Map attribution").assertIsDisplayed()
         compose.onNodeWithContentDescription("Collapse journey details").assertHasClickAction().performClick()
@@ -87,9 +91,14 @@ class CoreAccessibilityTest {
         saveScreenshot("journey-200")
         assertVisibleTextFits()
         compose.onNodeWithText("Status card").performScrollTo().assertHasClickAction()
+        val dockTop = compose.onNodeWithContentDescription("Journeys").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Status card must remain above the dock",
+            compose.onNodeWithText("Status card").fetchSemanticsNode().boundsInRoot.bottom <= dockTop)
         assertVisibleTextFits()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(route.calls.first().name))
-        compose.onNodeWithText(route.calls.first().name).assertIsDisplayed().tryPerformAccessibilityChecks()
+        compose.onNodeWithText(route.calls.first().name).assertIsDisplayed()
+        saveScreenshot("journey-timeline-200")
+        compose.onNodeWithText(route.calls.first().name).tryPerformAccessibilityChecks()
         assertVisibleTextFits()
     }
 

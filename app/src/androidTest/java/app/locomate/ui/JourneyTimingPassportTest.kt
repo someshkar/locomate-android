@@ -41,6 +41,37 @@ import org.junit.runner.RunWith
 class JourneyTimingPassportTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun journeySummaryKeepsClocksAndSaveAboveTheDockAtNormalText() {
+        val route = PreviewRoutes.load(compose.activity).first()
+        var saved by mutableStateOf(false)
+        var edited = false
+        compose.setContent { LocomateTheme {
+            NavigationScaffold(Tab.Journeys, {}, {}) { inset ->
+                JourneyScreen(route, saved = saved, onSave = { saved = !saved }, onEdit = { edited = true }, bottomInset = inset)
+            }
+        } }
+        val dock = compose.onNodeWithContentDescription("Journeys")
+        for (name in listOf(route.calls.first().name, route.calls.last().name)) {
+            val clock = compose.onNodeWithContentDescription(name).assertIsDisplayed()
+            assertTrue("Station clock overlaps navigation", clock.fetchSemanticsNode().boundsInRoot.bottom
+                <= dock.fetchSemanticsNode().boundsInRoot.top)
+        }
+        val save = compose.onNodeWithContentDescription("Save journey").assertHasClickAction()
+        assertTrue("Save overlaps navigation", save.fetchSemanticsNode().boundsInRoot.bottom
+            <= dock.fetchSemanticsNode().boundsInRoot.top)
+        screenshot("journey-card-normal")
+        save.performClick()
+        compose.onNodeWithContentDescription("Remove saved journey").assertIsDisplayed()
+        compose.runOnIdle { assertTrue(saved) }
+        compose.onNodeWithContentDescription("Expand journey details").performClick()
+        val edit = compose.onNodeWithContentDescription("Edit boarding and alighting stops. Board at ${route.originCode}, leave at ${route.destinationCode}")
+            .performScrollTo().assertHasClickAction()
+        assertTrue("Edit overlaps navigation", edit.fetchSemanticsNode().boundsInRoot.bottom
+            <= dock.fetchSemanticsNode().boundsInRoot.top)
+        edit.performClick()
+        compose.runOnIdle { assertTrue(edited) }
+    }
+
     @Test fun overviewNavigationKeepsSavedActionsAboveTheDockAtNormalText() {
         val route = PreviewRoutes.load(compose.activity).first()
         val gateway = RailGateway(compose.activity, "")
