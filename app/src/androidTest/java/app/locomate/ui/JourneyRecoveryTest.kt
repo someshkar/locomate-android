@@ -26,6 +26,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.locomate.data.CommunityPreferences
@@ -39,6 +40,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.SocketException
 import java.time.Instant
+import java.time.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
 import org.junit.Assert.*
 import org.junit.Rule
@@ -50,6 +52,44 @@ import org.junit.runner.RunWith
 class JourneyRecoveryTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var launchRevision by mutableIntStateOf(0)
+
+    @Test fun betweenStationsUsesBoardingDateToOpenTheDerivedOriginRun() {
+        RecoveryGateway(stationFeatures = true).use { server ->
+            val current = CurrentJourneyStore(compose.activity, server.url)
+            current.clear()
+            try {
+                installRoot(server.url)
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Board at station"))
+                compose.onNodeWithContentDescription("Board at station").performClick()
+                compose.onNodeWithContentDescription("Choose New Delhi, NDLS").performClick()
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Leave at station"))
+                compose.onNodeWithContentDescription("Leave at station").performClick()
+                compose.onNodeWithContentDescription("Choose Mumbai Central, MMCT").performClick()
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Find trains between stations"))
+                compose.onNodeWithContentDescription("Find trains between stations").performClick()
+                awaitText("Recovery Express")
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Recovery Express"))
+                compose.onNodeWithText("RailRadar route timetable").assertIsDisplayed()
+                captureRecent("route-between-normal")
+                compose.onNodeWithText("train origin", substring = true).performScrollTo().assertIsDisplayed()
+                captureRecent("route-origin-date-normal")
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Recovery Express"))
+                compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
+                awaitText("SCHEDULED · NO LIVE ETA")
+                val travelDate = RailGateway.indiaToday()
+                val originDate = LocalDate.parse(travelDate).minusDays(1).toString()
+                assertEquals(JourneyAlertLink("12951", originDate), current.read())
+                assertTrue(server.rawPaths.any { it.startsWith("/v1/trains/between?") && it.contains("date=$travelDate") })
+                assertTrue(server.paths.contains("/v1/runs/12951/$originDate"))
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Choose origin date"))
+                assertEquals(originDate, compose.onNodeWithContentDescription("Choose origin date")
+                    .fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+                assertNoConsent()
+            } finally { current.clear() }
+        }
+    }
 
     @Test fun stationShortcutLookupRetryAndDatedRootSelectionUseTheOrdinaryGateway() {
         RecoveryGateway(stationFeatures = true).use { server ->
@@ -339,6 +379,7 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000, priva
     private val socket = ServerSocket(0, 10, InetAddress.getByName("127.0.0.1"))
     val url = "http://127.0.0.1:${socket.localPort}"
     val paths = CopyOnWriteArrayList<String>()
+    val rawPaths = CopyOnWriteArrayList<String>()
     val networkTimes = CopyOnWriteArrayList<Long>()
     // Repeated bounds requests must not silently renew the fixed expiry scenario.
     private val snapshotTime by lazy { Instant.now() }
@@ -351,6 +392,7 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000, priva
                     val rawPath = input.readLine().split(' ')[1]
                     val path = rawPath.substringBefore('?')
                     paths += path
+                    rawPaths += rawPath
                     var length = 0
                     while (true) {
                         val line = input.readLine() ?: break
@@ -372,6 +414,11 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000, priva
                             """{"stations":[{"code":"XYZ","name":"Obsolete Station","sourceLabel":"Fixture catalogue","sourceUpdatedAt":null}]}"""
                             else """{"stations":[{"code":"NDLS","name":"New Delhi","sourceLabel":"RailRadar station catalogue","sourceUpdatedAt":null}]}"""
                         path == "/v1/stations/NDLS/trains" -> """{"station":{"code":"NDLS","name":"New Delhi","sourceLabel":"RailRadar station timetable","sourceUpdatedAt":null},"truncated":false,"trains":[{"number":"12951","name":"Recovery Express","originCode":"AAA","originName":"Origin","destinationCode":"BBB","destinationName":"Destination","live":false,"sourceLabel":"RailRadar station timetable","distanceKm":0}]}"""
+                        path == "/v1/trains/between" -> {
+                            val travelDate = rawPath.substringAfter("date=", "2026-10-02").take(10)
+                            val originDate = LocalDate.parse(travelDate).minusDays(1)
+                            """{"from":{"code":"NDLS","name":"New Delhi","sourceLabel":"RailRadar route timetable","sourceUpdatedAt":null},"to":{"code":"MMCT","name":"Mumbai Central","sourceLabel":"RailRadar route timetable","sourceUpdatedAt":null},"truncated":false,"trains":[{"number":"12951","name":"Recovery Express","originCode":"NDLS","originName":"New Delhi","destinationCode":"MMCT","destinationName":"Mumbai Central","departure":"16:55","arrival":"08:35","distanceKm":1388.4,"sourceLabel":"RailRadar route timetable","live":false,"originDate":"$originDate","boardingDay":2,"arrivalDay":3}]}"""
+                        }
                         stationFeatures && path == "/v1/trains/search" -> """{"trains":[]}"""
                         failedRun -> """{"error":{"message":"Fixture run unavailable"}}"""
                         path == "/v1/network/trains" -> network()

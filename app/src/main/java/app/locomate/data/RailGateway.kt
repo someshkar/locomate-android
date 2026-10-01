@@ -32,6 +32,11 @@ data class TrainSearchResult(
     val live: Boolean,
     val sourceLabel: String = "Railway catalogue",
     val distanceKm: Double = 0.0,
+    val originDate: String? = null,
+    val boardingDay: Int? = null,
+    val arrivalDay: Int? = null,
+    val departure: String? = null,
+    val arrival: String? = null,
 )
 
 data class NetworkBounds(val west: Double, val south: Double, val east: Double, val north: Double) {
@@ -169,6 +174,25 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         return StationTrainsResult(station, decoded, data.getBoolean("truncated"))
     }
 
+    suspend fun trainsBetween(from: String, to: String, travelDate: String): BetweenStationsResult {
+        require(from.matches(Regex("[A-Z]{1,10}")) && to.matches(Regex("[A-Z]{1,10}")) && from != to) {
+            "Choose different valid stations"
+        }
+        require(runCatching { LocalDate.parse(travelDate).toString() == travelDate }.getOrDefault(false)) {
+            "Invalid boarding date"
+        }
+        val data = get("/v1/trains/between?from=$from&to=$to&date=$travelDate")
+        val actualFrom = decodeStation(data.getJSONObject("from"))
+        val actualTo = decodeStation(data.getJSONObject("to"))
+        val rows = data.getJSONArray("trains")
+        require(actualFrom.code == from && actualTo.code == to && rows.length() <= 1000) { "Invalid route timetable" }
+        val trains = decodeSearchTrains(rows)
+        require(trains.all { train -> train.number.matches(Regex("[0-9]{4,6}")) && !train.live &&
+            train.originDate?.let { runCatching { LocalDate.parse(it).toString() == it }.getOrDefault(false) } == true &&
+            (train.boardingDay ?: 0) > 0 && (train.arrivalDay ?: 0) > 0 }) { "Invalid dated route" }
+        return BetweenStationsResult(actualFrom, actualTo, trains, data.getBoolean("truncated"))
+    }
+
     private fun decodeSearchTrains(trains: JSONArray): List<TrainSearchResult> {
         return (0 until trains.length()).map { i ->
             val train = trains.getJSONObject(i)
@@ -179,6 +203,11 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 train.optBoolean("live", false),
                 train.optString("sourceLabel").trim().ifBlank { "Railway catalogue" },
                 train.optDouble("distanceKm", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
+                originDate = train.optString("originDate").takeIf { it.isNotBlank() && it != "null" },
+                boardingDay = train.optInt("boardingDay").takeIf { it > 0 },
+                arrivalDay = train.optInt("arrivalDay").takeIf { it > 0 },
+                departure = train.optString("departure").takeIf { it.isNotBlank() && it != "null" },
+                arrival = train.optString("arrival").takeIf { it.isNotBlank() && it != "null" },
             )
         }
     }

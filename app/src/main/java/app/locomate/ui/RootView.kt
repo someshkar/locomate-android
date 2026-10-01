@@ -136,6 +136,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
     }
     var tab by rememberSaveable { mutableStateOf(Tab.Journeys) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOriginDate by rememberSaveable { mutableStateOf(RailGateway.indiaToday()) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var selectedNumber by rememberSaveable { mutableStateOf("12951") }
     var liveRoute by remember { mutableStateOf<RoutePreview?>(null) }
@@ -480,6 +481,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                 routes = routes,
                 bottomInset = dockInset,
                 gateway = gateway,
+                originDate = searchOriginDate,
+                onOriginDateChange = { searchOriginDate = it },
                 onSelect = { number ->
                     selectionEpoch++
                     stopStatusCardUnless(null)

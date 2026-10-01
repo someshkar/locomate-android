@@ -23,6 +23,7 @@ data class RouteStop(
     val distanceKm: Double? = null,
     val scheduledArrivalMillis: Long? = null,
     val scheduledDepartureMillis: Long? = null,
+    val day: Int = 1,
 )
 
 data class RoutePreview(
@@ -92,6 +93,7 @@ object PreviewRoutes {
                         name = stop.getString("name"),
                         scheduledArrival = stop.optString("arrival").takeIf { it.isNotBlank() && it != "null" }?.take(5),
                         scheduledDeparture = stop.optString("departure").takeIf { it.isNotBlank() && it != "null" }?.take(5),
+                        day = stop.getInt("day"),
                     )
                 },
                 distanceKm = pack.optDouble("distanceKm", 0.0),

@@ -163,6 +163,38 @@ class CoreAccessibilityTest {
         assertVisibleTextFits(); saveScreenshot("station-lookup-200")
     }
 
+    @Test fun routePickerAndScheduledResultRemainReadableAtTwoHundredPercentText() {
+        val routes = PreviewRoutes.load(compose.activity)
+        var selected: String? = null
+        compose.setContent { AuditTheme {
+            val gateway = androidx.compose.runtime.remember { RailGateway(compose.activity, "") }
+            NavigationScaffold(Tab.Journeys, {}, {}, searchActive = true) { inset ->
+                SearchScreen(routes, gateway, { selected = it }, { _, _ -> }, inset)
+            }
+        } }
+        compose.enableAccessibilityChecks()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(androidx.compose.ui.test.hasContentDescription("Board at station"))
+        compose.onNodeWithContentDescription("Board at station").assertIsDisplayed().tryPerformAccessibilityChecks()
+        compose.onNodeWithContentDescription("Board at station").performClick()
+        compose.onNodeWithContentDescription("Choose Vadodara Jn, BRC").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(androidx.compose.ui.test.hasContentDescription("Leave at station"))
+        compose.onNodeWithContentDescription("Leave at station").performClick()
+        compose.onNodeWithContentDescription("Choose Kota Jn, KOTA").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(androidx.compose.ui.test.hasContentDescription("Find trains between stations"))
+        compose.onNodeWithContentDescription("Find trains between stations").assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits(); saveScreenshot("route-picker-200")
+        compose.onNodeWithContentDescription("Find trains between stations").performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Mumbai Central-New Delhi Rajdhani Express"))
+        compose.onNodeWithText("Historical route pack").assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits(); saveScreenshot("route-result-200")
+        compose.onNodeWithText("train origin", substring = true).performScrollTo()
+            .assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits(); saveScreenshot("route-origin-date-200")
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Mumbai Central-New Delhi Rajdhani Express"))
+        compose.onNodeWithText("Mumbai Central-New Delhi Rajdhani Express").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("12951", selected) }
+    }
+
     @Test fun actualRecentSelectionAndClearingRemainReadableAtTwoHundredPercentText() {
         val store = app.locomate.data.RecentTrainStore(compose.activity, "")
         assertTrue(store.clear())

@@ -75,6 +75,8 @@ fun SearchScreen(
     onSelect: (String) -> Unit,
     onSelectLive: (TrainSearchResult, String) -> Unit,
     bottomInset: Dp = 0.dp,
+    originDate: String? = null,
+    onOriginDateChange: (String) -> Unit = {},
 ) {
     val focus = LocalFocusManager.current
     val density = LocalDensity.current
@@ -90,7 +92,9 @@ fun SearchScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var selectedStationCode by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedStationName by rememberSaveable { mutableStateOf<String?>(null) }
-    var date by rememberSaveable { mutableStateOf(RailGateway.indiaToday()) }
+    var localDate by rememberSaveable { mutableStateOf(RailGateway.indiaToday()) }
+    val date = originDate ?: localDate
+    val setDate: (String) -> Unit = { if (originDate != null) onOriginDateChange(it) else localDate = it }
     var retry by androidx.compose.runtime.remember(gateway) { mutableIntStateOf(0) }
     val requestQuery = query.trim()
     var searchState by androidx.compose.runtime.remember(gateway) { mutableStateOf(SearchResultState("")) }
@@ -170,7 +174,7 @@ fun SearchScreen(
                 item("date") {
                     Column {
                         Spacer(Modifier.height(16.dp))
-                        OriginDatePicker(date, { date = it }, onOpen = { focus.clearFocus() })
+                        OriginDatePicker(date, setDate, onOpen = { focus.clearFocus() })
                     }
                 }
             }
@@ -290,6 +294,9 @@ fun SearchScreen(
                         }
                     }
                 }
+            }
+            item("between-stations") {
+                BetweenStationsSection(routes, gateway, rememberTrain, onSelect, onSelectLive, setDate)
             }
             item("attribution") {
                 Column {

@@ -40,20 +40,21 @@ import java.util.Locale
 /** The date is a railway calendar day. Material's UTC date millis are never device-local instants. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun OriginDatePicker(value: String, onValue: (String) -> Unit, onOpen: () -> Unit = {}) {
+internal fun OriginDatePicker(value: String, onValue: (String) -> Unit, onOpen: () -> Unit = {},
+    title: String = "Origin date", hint: String = "The origin date is the day the train starts in India — overnight runs may reach your station the next day.") {
     var showCalendar by rememberSaveable { mutableStateOf(false) }
     val date = LocalDate.parse(value)
     val today = LocalDate.parse(RailGateway.indiaToday())
     val enlarged = LocalDensity.current.fontScale >= 1.5f
     val focus = LocalFocusManager.current
     val heading: @Composable () -> Unit = {
-        Text("ORIGIN DATE", color = LM.Ink3, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        Text(title.uppercase(Locale.ROOT), color = LM.Ink3, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             fontFamily = PlexMono, letterSpacing = 0.8.sp)
     }
     val calendarButton: @Composable () -> Unit = {
         Row(Modifier.background(LM.Raised, RoundedCornerShape(18.dp))
             .clickable(role = Role.Button) { onOpen(); showCalendar = true }
-            .semantics { contentDescription = "Choose origin date"; stateDescription = value }
+            .semantics { contentDescription = "Choose ${title.replaceFirstChar { it.lowercase() }}"; stateDescription = value }
             .heightIn(min = 48.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Outlined.CalendarMonth, null, tint = LM.Ink, modifier = Modifier.size(18.dp))
@@ -89,7 +90,7 @@ internal fun OriginDatePicker(value: String, onValue: (String) -> Unit, onOpen: 
                 }
             }
         }
-        Text("The origin date is the day the train starts in India — overnight runs may reach your station the next day.",
+        Text(hint,
             color = LM.Ink3, fontSize = 13.sp)
     }
     if (showCalendar) {
@@ -112,8 +113,8 @@ internal fun OriginDatePicker(value: String, onValue: (String) -> Unit, onOpen: 
         }, dismissButton = { TextButton(onClick = { showCalendar = false }) { Text("Cancel") } }) {
             if (inputMode) Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Origin date · India time", color = LM.Ink2, fontSize = 13.sp)
-                OutlinedTextField(input, { input = it }, label = { Text("Origin date") },
+                Text("$title · India time", color = LM.Ink2, fontSize = 13.sp)
+                OutlinedTextField(input, { input = it }, label = { Text(title) },
                     supportingText = { Text(if (inputDate == null) "Enter a valid date as YYYY-MM-DD." else "YYYY-MM-DD") },
                     singleLine = true, isError = inputDate == null,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -128,7 +129,7 @@ internal fun OriginDatePicker(value: String, onValue: (String) -> Unit, onOpen: 
                 }) { Text("Show calendar") }
             } else Column(Modifier.verticalScroll(rememberScrollState())) {
                 DatePicker(state = picker, showModeToggle = false,
-                    title = { Text("Origin date · India time", modifier = Modifier.padding(start = 24.dp, top = 16.dp),
+                    title = { Text("$title · India time", modifier = Modifier.padding(start = 24.dp, top = 16.dp),
                         color = LM.Ink2, fontSize = 13.sp) },
                     headline = {
                         Text(calendarDate?.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.forLanguageTag("en-IN")))

@@ -4,6 +4,8 @@ import org.json.JSONObject
 
 data class StationSearchResult(val code: String, val name: String, val sourceLabel: String, val sourceUpdatedAt: String? = null)
 data class StationTrainsResult(val station: StationSearchResult, val trains: List<TrainSearchResult>, val truncated: Boolean)
+data class BetweenStationsResult(val from: StationSearchResult, val to: StationSearchResult,
+    val trains: List<TrainSearchResult>, val truncated: Boolean)
 
 internal fun decodeStation(row: JSONObject): StationSearchResult {
     val code = row.getString("code")
