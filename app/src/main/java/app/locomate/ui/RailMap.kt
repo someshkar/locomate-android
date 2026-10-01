@@ -72,6 +72,7 @@ fun RailMap(
 
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val mapGlass = LocalMapGlass.current
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
     val currentRoute = rememberUpdatedState(route)
     val currentNetworkTrains = rememberUpdatedState(networkTrains)
@@ -148,6 +149,7 @@ fun RailMap(
                             currentTrainSelection.value != null, currentClusterSelection.value != null)
                     }
                     this@apply.post { publishBounds() }
+                    mapGlass?.attach(this@apply, map, lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                 }
             }
         }
@@ -159,8 +161,8 @@ fun RailMap(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_RESUME -> { mapView.onResume(); mapGlass?.resume(mapView) }
+                Lifecycle.Event.ON_PAUSE -> { mapGlass?.pause(mapView); mapView.onPause() }
                 Lifecycle.Event.ON_STOP -> { attribution?.stop(mapView); mapView.onStop() }
                 Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
                 else -> Unit
@@ -172,6 +174,7 @@ fun RailMap(
             mapActive.set(false)
             attribution?.detach(mapView)
             journeyCamera?.detach(mapView)
+            mapGlass?.detach(mapView)
             mapView.onDestroy()
         }
     }
@@ -182,6 +185,7 @@ fun RailMap(
                 update = { view ->
                     val routeSnapshot = currentRoute.value
                     val networkSnapshot = currentNetworkTrains.value
+                    mapGlass?.updateContent(view, routeSnapshot to networkSnapshot)
                     journeyCamera?.update(routeSnapshot, sheetVisibleHeight)
                     view.getMapAsync { map ->
                         if (!mapActive.get() || routeSnapshot != currentRoute.value

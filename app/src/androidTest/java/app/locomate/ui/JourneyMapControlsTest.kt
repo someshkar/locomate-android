@@ -8,6 +8,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -34,6 +36,55 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class JourneyMapControlsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun nativeGlassSnapshotFollowsCameraAndClearsWhenTheActivityStops() {
+        var route by mutableStateOf(PreviewRoutes.load(compose.activity).first())
+        val glass = MapGlassController()
+        compose.setContent { LocomateTheme {
+            NavigationScaffold(Tab.Journeys, {}, {}, mapGlass = glass) { inset ->
+                JourneyScreen(route, saved = false, onSave = {}, bottomInset = inset)
+            }
+        } }
+        compose.waitUntil(15_000) { glass.snapshot?.let { containsRoutePixels(it.image.asAndroidBitmap()) } == true }
+        val view = requireNotNull(findMap(compose.activity.window.decorView))
+        val fitted = requireNotNull(glass.snapshot)
+        val texture = File(compose.activity.getExternalFilesDir(null), "map-controls/glass-native-texture.png")
+        texture.parentFile?.mkdirs()
+        texture.outputStream().use { fitted.image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+        assertEquals(view.width.toFloat(), fitted.bounds.width)
+        assertEquals(view.height.toFloat(), fitted.bounds.height)
+        assertTrue(maxOf(fitted.image.width, fitted.image.height) <= 960)
+        compose.onNodeWithContentDescription("Show historical sample position").performClick()
+        compose.waitUntil(10_000) { glass.snapshot?.let { it.image !== fitted.image } == true }
+        val focused = requireNotNull(glass.snapshot)
+        assertTrue("The snapshot must belong to the new camera revision", focused.revision > fitted.revision)
+        var map: MapLibreMap? = null
+        compose.runOnUiThread { view.getMapAsync { map = it } }
+        screenshot("glass-position-focus", view, requireNotNull(map))
+        compose.onNodeWithContentDescription("Fit journey route").performClick()
+        compose.waitUntil(10_000) { glass.snapshot?.let { it.image !== focused.image } == true }
+        screenshot("glass-route-fit", view, requireNotNull(map))
+        // Exercise the same native camera adjustment while the glass moves.
+        compose.onNodeWithContentDescription("Expand journey details").performClick()
+        compose.waitUntil(10_000) { glass.snapshot != null }
+        screenshot("glass-expanded", view, requireNotNull(map))
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            assertNull("Backgrounded maps must release their glass snapshot", glass.snapshot)
+        }
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitUntil(10_000) { glass.snapshot != null }
+        val resumed = requireNotNull(glass.snapshot)
+        compose.runOnIdle { route = route.copy(trainNumber = "54321") }
+        compose.waitUntil(15_000) {
+            findMap(compose.activity.window.decorView) !== view && glass.snapshot?.let {
+                it.image !== resumed.image && containsRoutePixels(it.image.asAndroidBitmap())
+            } == true
+        }
+        val replacement = requireNotNull(findMap(compose.activity.window.decorView))
+        compose.runOnUiThread { glass.detach(replacement) }
+        assertNull("A detached map must not leave a decorative image behind", glass.snapshot)
+    }
 
     @Test fun nativeCameraRepeatsActionsAndRefreshesGeometryWithoutRecreatingTheMap() {
         var route by mutableStateOf(PreviewRoutes.load(compose.activity).first())
@@ -89,6 +140,19 @@ class JourneyMapControlsTest {
         if (view is MapView) return view
         if (view is ViewGroup) for (index in 0 until view.childCount) findMap(view.getChildAt(index))?.let { return it }
         return null
+    }
+
+    private fun containsRoutePixels(bitmap: Bitmap): Boolean {
+        // Reject an empty native texture: lifecycle state alone cannot prove
+        // that the actual GL route reached the bitmap used by the glass.
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return pixels.count { color ->
+            val red = android.graphics.Color.red(color)
+            val green = android.graphics.Color.green(color)
+            val blue = android.graphics.Color.blue(color)
+            android.graphics.Color.alpha(color) > 200 && blue > 160 && blue - red > 70 && blue - green > 35
+        } > 20
     }
 
     private fun screenshot(name: String, view: MapView, map: MapLibreMap) {

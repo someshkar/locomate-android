@@ -817,17 +817,21 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
 /** Shares the actual dock footprint (including system inset and outer padding) with map cards. */
 @Composable
 internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit,
-                                searchActive: Boolean = false, content: @Composable (Dp) -> Unit) {
+                                searchActive: Boolean = false,
+                                mapGlass: MapGlassController = remember { MapGlassController() },
+                                content: @Composable (Dp) -> Unit) {
     var dockHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val dockInset = maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
-    Box(Modifier.fillMaxSize().then(if (searchActive) Modifier.imePadding() else Modifier)) {
-        content(dockInset)
-        CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .onSizeChanged { dockHeightPx = it.height }
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp))
+    androidx.compose.runtime.CompositionLocalProvider(LocalMapGlass provides mapGlass) {
+        Box(Modifier.fillMaxSize().then(if (searchActive) Modifier.imePadding() else Modifier)) {
+            content(dockInset)
+            CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .onSizeChanged { dockHeightPx = it.height }
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp))
+        }
     }
 }
 
@@ -843,14 +847,17 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
             modifier = Modifier.weight(1f).heightIn(min = 70.dp)
         ) {
-            Row(Modifier.background(lens).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                val selectTab: (Tab) -> Unit = {
-                    haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                    onTab(it)
+            MapGlassSurface { glass ->
+                Row(Modifier.background(if (glass) Brush.verticalGradient(listOf(Color(0xAA191A22), Color(0xD00D0E16))) else lens)
+                    .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val selectTab: (Tab) -> Unit = {
+                        haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                        onTab(it)
+                    }
+                    NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
+                    NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", Icons.Outlined.Public, selectTab, Modifier.weight(1f))
+                    NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", Icons.Outlined.ContactPage, selectTab, Modifier.weight(1f))
                 }
-                NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
-                NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", Icons.Outlined.Public, selectTab, Modifier.weight(1f))
-                NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", Icons.Outlined.ContactPage, selectTab, Modifier.weight(1f))
             }
         }
         Spacer(Modifier.width(14.dp))
@@ -862,8 +869,10 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
             modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
         ) {
-            Box(Modifier.background(lens), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+            MapGlassSurface { glass ->
+                Box(Modifier.fillMaxSize().background(if (glass) Brush.verticalGradient(listOf(Color(0xAA191A22), Color(0xD00D0E16))) else lens), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                }
             }
         }
     }

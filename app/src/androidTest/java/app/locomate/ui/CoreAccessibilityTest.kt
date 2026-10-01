@@ -77,16 +77,19 @@ class CoreAccessibilityTest {
 
     @Test fun journeyDetailsCanBeExpandedWithoutDragging() {
         val route = PreviewRoutes.load(compose.activity).first()
+        val glass = MapGlassController()
         compose.setContent { AuditTheme {
-            NavigationScaffold(Tab.Journeys, {}, {}) { inset ->
+            NavigationScaffold(Tab.Journeys, {}, {}, mapGlass = glass) { inset ->
                 JourneyScreen(route, saved = false, onSave = {}, bottomInset = inset)
             }
         } }
+        compose.waitUntil(15_000) { glass.snapshot != null }
         compose.enableAccessibilityChecks()
         compose.onNodeWithText("Map attribution").assertIsDisplayed()
         compose.onNodeWithContentDescription("Collapse journey details").assertHasClickAction().performClick()
         compose.onNodeWithText("Map attribution").assertIsDisplayed()
         compose.onNodeWithContentDescription("Expand journey details").assertHasClickAction().performClick()
+        compose.waitUntil(15_000) { glass.snapshot != null }
         compose.onNodeWithText("My Journeys").tryPerformAccessibilityChecks()
         saveScreenshot("journey-200")
         assertVisibleTextFits()

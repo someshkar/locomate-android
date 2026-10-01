@@ -9,7 +9,7 @@ object LM {
     val Ground   = Color(0xFF060708)
     val Elevated = Color(0xFF17171D)
     val Raised   = Color(0xFF202025)
-    // Compose does not blur the MapLibre view beneath this sheet; use a stronger scrim.
+    // Fallback for surfaces outside the current native map snapshot.
     val Glass    = Color(0xFA101116)
     val Accent   = Color(0xFF009DFA)
     val AccentHi = Color(0xFF8FCBFF)
@@ -25,8 +25,7 @@ object LM {
     val Ink4     = Color(0xFF767D89)
     val Hairline = Color.White.copy(alpha = 0.10f)
     val SheetEdge = Color.White.copy(alpha = 0.12f)
-    // Dark lens tint; stronger than the reference's blurred glass because the
-    // native MapLibre view is not a Compose backdrop-blur source.
+    // Solid lens fallback when no current native map texture covers the dock.
     val DockTop = Color(0xF212131B)
     val DockBottom = Color(0xE812131B)
     val DockLabel = Color(0xFFC9CED9)
