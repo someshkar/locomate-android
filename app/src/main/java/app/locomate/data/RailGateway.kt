@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.AtomicFile
 import app.locomate.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -177,6 +179,19 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             generatedAt = data.optString("generatedAt", ""),
             freshUntil = data.optString("freshUntil", ""),
         )
+    }
+
+    suspend fun trainReliability(number: String): TrainReliabilitySummary {
+        require(Regex("^[0-9]{4,6}$").matches(number)) { "Invalid train number" }
+        requireRequestAllowed(false)
+        val requestedInstallation = installationId
+        val payload = get("/v1/trains/$number/history?limit=1")
+        currentCoroutineContext().ensureActive()
+        requireRequestAllowed(false)
+        // A reply from before a completed deletion cannot repopulate the new installation's card.
+        if (appContext.getSharedPreferences("locomate.installation", Context.MODE_PRIVATE)
+                .getString("id", null) != requestedInstallation) throw GatewayError("Installation changed while loading history.")
+        return TrainReliabilitySummary.decode(payload, number)
     }
 
     suspend fun journey(number: String, originDate: String): RoutePreview {

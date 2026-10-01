@@ -472,6 +472,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
             when (current) {
                 Tab.Journeys -> JourneyScreen(
                     route = selectedRoute,
+                    railGateway = gateway,
                     plan = selectedPlan,
                     productionMode = gateway.configured && selectedPreview == null,
                     saved = selectedRoute?.let { SavedJourney.from(it, selectedPlan ?: JourneyPlan.default(it)).key in savedJourneys.map(SavedJourney::key) } ?: false,

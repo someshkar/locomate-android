@@ -73,6 +73,7 @@ import app.locomate.data.RoutePreview
 import app.locomate.data.RouteStop
 import app.locomate.data.JourneyPlan
 import app.locomate.data.RailTimeText
+import app.locomate.data.RailGateway
 import app.locomate.ui.theme.LM
 import app.locomate.ui.theme.PlexMono
 import kotlinx.coroutines.Job
@@ -90,8 +91,9 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                   message: String? = null, statusCardEnabled: Boolean = false, onSave: () -> Unit,
                   onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
                   onSearch: () -> Unit = {}, onStatusCard: () -> Unit = {},
-                  alertStatus: String? = null, onAlerts: () -> Unit = {}) {
+                  alertStatus: String? = null, onAlerts: () -> Unit = {}, railGateway: RailGateway? = null) {
     val haptics = LocalHapticFeedback.current
+    val (reliability, retryReliability) = rememberTrainReliability(route, railGateway)
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
     val boarding = route?.calls?.firstOrNull { it.code == segment?.boardingCode }
     val alighting = route?.calls?.firstOrNull { it.code == segment?.alightingCode }
@@ -353,13 +355,19 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         }
                         Spacer(Modifier.height(23.dp))
                     }
-                    Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.semantics { heading() })
-                    Spacer(Modifier.height(12.dp))
                     }
                     }
                     }
                     if (route != null) {
+                        item(key = "reliability") {
+                            TrainReliabilityCard(reliability, retryReliability)
+                            Spacer(Modifier.height(23.dp))
+                        }
+                        item(key = "timeline-heading") {
+                            Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.semantics { heading() })
+                            Spacer(Modifier.height(12.dp))
+                        }
                         itemsIndexed(route.calls, key = { index, stop -> "$index:${stop.code}" }) { index, stop ->
                             TimelineStop(stop, route.isPreview, route.statusLabel.startsWith("STALE"), index == 0)
                         }
