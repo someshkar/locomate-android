@@ -163,7 +163,7 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
                 Spacer(Modifier.padding(top = 5.dp))
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("The rail network", color = LM.Ink, fontSize = 27.sp, fontWeight = FontWeight.Bold,
+                    Text("The rail network", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp,
                         modifier = Modifier.semantics { heading() })
                     Text(if (gateway.configured) "GATEWAY" else "PREVIEW",
                         color = if (gateway.configured) LM.Accent else Color(0xFFBCA7FF),

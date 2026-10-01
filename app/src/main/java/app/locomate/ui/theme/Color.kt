@@ -23,11 +23,12 @@ private val Dark = darkColorScheme(
     onSurfaceVariant = LM.Ink2,
 )
 
-val SpaceGrotesk = FontFamily(
-    Font(R.font.space_grotesk_regular, FontWeight.Normal),
-    Font(R.font.space_grotesk_medium, FontWeight.Medium),
-    Font(R.font.space_grotesk_semibold, FontWeight.SemiBold),
-    Font(R.font.space_grotesk_bold, FontWeight.Bold),
+val Inter = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+    Font(R.font.inter_extrabold, FontWeight.ExtraBold),
 )
 
 val PlexMono = FontFamily(
@@ -37,21 +38,21 @@ val PlexMono = FontFamily(
 
 private val Type = Typography().let { base ->
     Typography(
-        displayLarge = base.displayLarge.copy(fontFamily = SpaceGrotesk),
-        displayMedium = base.displayMedium.copy(fontFamily = SpaceGrotesk),
-        displaySmall = base.displaySmall.copy(fontFamily = SpaceGrotesk),
-        headlineLarge = base.headlineLarge.copy(fontFamily = SpaceGrotesk),
-        headlineMedium = base.headlineMedium.copy(fontFamily = SpaceGrotesk),
-        headlineSmall = base.headlineSmall.copy(fontFamily = SpaceGrotesk),
-        titleLarge = base.titleLarge.copy(fontFamily = SpaceGrotesk),
-        titleMedium = base.titleMedium.copy(fontFamily = SpaceGrotesk),
-        titleSmall = base.titleSmall.copy(fontFamily = SpaceGrotesk),
-        bodyLarge = base.bodyLarge.copy(fontFamily = SpaceGrotesk),
-        bodyMedium = base.bodyMedium.copy(fontFamily = SpaceGrotesk),
-        bodySmall = base.bodySmall.copy(fontFamily = SpaceGrotesk),
-        labelLarge = base.labelLarge.copy(fontFamily = SpaceGrotesk),
-        labelMedium = base.labelMedium.copy(fontFamily = SpaceGrotesk),
-        labelSmall = base.labelSmall.copy(fontFamily = SpaceGrotesk),
+        displayLarge = base.displayLarge.copy(fontFamily = Inter),
+        displayMedium = base.displayMedium.copy(fontFamily = Inter),
+        displaySmall = base.displaySmall.copy(fontFamily = Inter),
+        headlineLarge = base.headlineLarge.copy(fontFamily = Inter),
+        headlineMedium = base.headlineMedium.copy(fontFamily = Inter),
+        headlineSmall = base.headlineSmall.copy(fontFamily = Inter),
+        titleLarge = base.titleLarge.copy(fontFamily = Inter),
+        titleMedium = base.titleMedium.copy(fontFamily = Inter),
+        titleSmall = base.titleSmall.copy(fontFamily = Inter),
+        bodyLarge = base.bodyLarge.copy(fontFamily = Inter),
+        bodyMedium = base.bodyMedium.copy(fontFamily = Inter),
+        bodySmall = base.bodySmall.copy(fontFamily = Inter),
+        labelLarge = base.labelLarge.copy(fontFamily = Inter),
+        labelMedium = base.labelMedium.copy(fontFamily = Inter),
+        labelSmall = base.labelSmall.copy(fontFamily = Inter),
     )
 }
 

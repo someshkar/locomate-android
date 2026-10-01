@@ -188,7 +188,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     MapAttributionButton(mapAttribution)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("My Journeys", color = LM.Ink, fontSize = 33.sp, fontWeight = FontWeight.Bold,
+                        Text("My Journeys", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp,
                             modifier = Modifier.weight(1f).semantics { heading() })
                         Surface(onClick = onSave, enabled = route != null,
                             color = Color.White.copy(alpha = 0.09f), shape = CircleShape,

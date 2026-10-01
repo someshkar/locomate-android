@@ -109,7 +109,7 @@ fun SearchSheet(
                         .background(LM.Ink3.copy(alpha = 0.55f)))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = LM.Ink,
+                    Text("Search", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp, color = LM.Ink,
                         modifier = Modifier.weight(1f).semantics { heading() })
                     IconButton(onClick = onClose) {
                         Icon(Icons.Outlined.Close, contentDescription = "Close search", tint = LM.Ink)

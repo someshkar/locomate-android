@@ -76,7 +76,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
     ) {
         Spacer(Modifier.height(30.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.Bold,
+            Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.3).sp,
                 modifier = Modifier.weight(1f).semantics { heading() })
             IconButton(onClick = onSettings) {
                 Icon(Icons.Outlined.Settings, contentDescription = "Open settings", tint = LM.Ink)
