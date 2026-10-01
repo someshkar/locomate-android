@@ -36,6 +36,7 @@ import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
+import kotlin.math.abs
 
 /** Native map surface. The sample corridor is shown only in explicit preview mode. */
 @Composable
@@ -56,6 +57,7 @@ fun RailMap(
     val clusterIcons = remember(context) { mutableMapOf<Int, org.maplibre.android.annotations.Icon>() }
     var styleReady by remember(route?.trainNumber, route?.runDate) { mutableStateOf(false) }
     val markerRefs = remember(route?.trainNumber, route?.runDate) { mutableListOf<Marker>() }
+    val markerSync = remember(route?.trainNumber, route?.runDate) { MarkerSync() }
     val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
         MapView(context).apply {
@@ -71,8 +73,11 @@ fun RailMap(
                 }
                 map.addOnCameraIdleListener {
                     publishBounds()
-                    if (map.style != null) syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                        observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                    if (map.style != null && markerSync.needsUpdate(
+                            currentRoute.value, currentNetworkTrains.value, map.cameraPosition.zoom)) {
+                        syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
+                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                    }
                 }
                 map.uiSettings.isCompassEnabled = false
                 map.uiSettings.isAttributionEnabled = true
@@ -97,8 +102,11 @@ fun RailMap(
                                 .width(5f)
                         )
                     }
-                    syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                        observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                    if (markerSync.needsUpdate(currentRoute.value, currentNetworkTrains.value,
+                            map.cameraPosition.zoom)) {
+                        syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
+                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                    }
                     this@apply.post { publishBounds() }
                 }
             }
@@ -132,11 +140,29 @@ fun RailMap(
                     val routeSnapshot = currentRoute.value
                     val networkSnapshot = currentNetworkTrains.value
                     view.getMapAsync { map ->
-                        if (map.style != null) syncMarkers(map, routeSnapshot, networkSnapshot,
-                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                        if (map.style != null && markerSync.needsUpdate(
+                                routeSnapshot, networkSnapshot, map.cameraPosition.zoom)) {
+                            syncMarkers(map, routeSnapshot, networkSnapshot,
+                                observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                        }
                     }
                 })
         }
+    }
+}
+
+/** MapLibre annotations are expensive to recreate while Compose animates the sheet. */
+private class MarkerSync {
+    private var route: RoutePreview? = null
+    private var trains: List<NetworkTrain>? = null
+    private var zoom = Double.NaN
+
+    fun needsUpdate(nextRoute: RoutePreview?, nextTrains: List<NetworkTrain>, nextZoom: Double): Boolean {
+        if (route === nextRoute && trains === nextTrains && abs(zoom - nextZoom) < 0.05) return false
+        route = nextRoute
+        trains = nextTrains
+        zoom = nextZoom
+        return true
     }
 }
 

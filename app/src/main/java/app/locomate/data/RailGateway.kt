@@ -146,11 +146,14 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         val scheduledEnd = scheduledTimes.lastOrNull()?.arrivalMillis ?: instantMillis(journey.getString("scheduledArrival"))
         val forecastEnd = if (hasForecast && !prediction.isNull("delayMinutes") && scheduledEnd != null)
             scheduledEnd + prediction.optInt("delayMinutes").toLong() * 60_000 else scheduledEnd
-        val observed = provenance?.stringOrNull("observedAt")
         val position = journey.optJSONObject("position")
-        val freshObservation = freshness == "live" && observed != null && runCatching {
-            Instant.now().epochSecond - Instant.parse(observed).epochSecond in 0..600
-        }.getOrDefault(false)
+        val positionDisplay = RailPositionEvidence.display(
+            source = position?.stringOrNull("source"),
+            freshness = freshness,
+            observedAtMillis = position?.optLong("observedAt")?.takeIf { it > 0L },
+            cached = cachedAt != null,
+        )
+        val freshObservation = positionDisplay == PositionDisplay.Observed
         val status = when {
             cachedAt != null -> "STALE · LAST KNOWN"
             freshness == "stale" -> "STALE · LAST KNOWN"
@@ -214,10 +217,13 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 "${if (cachedAt != null) "Last forecast · " else ""}P10 ${railTime(lower)} · P50 ${railTime(expected)} · P90 ${railTime(upper)}" else null,
             departureInstantMillis = scheduledTimes.firstOrNull()?.departureMillis ?: instantMillis(journey.getString("departureTime")),
             arrivalInstantMillis = scheduledEnd,
-            positionProgress = if (freshObservation || cachedAt != null)
+            positionProgress = if (positionDisplay != PositionDisplay.Hidden)
                 position?.optDouble("progress")?.takeIf { it.isFinite() && it in 0.0..1.0 } else null,
-            positionStatus = if (cachedAt != null) "Last known position · stale"
-                else if (freshObservation) "Observed position · $provider" else null,
+            positionStatus = when (positionDisplay) {
+                PositionDisplay.Stale -> "Last known position · stale"
+                PositionDisplay.Observed -> "Observed position · $provider"
+                PositionDisplay.Hidden -> null
+            },
         )
     }
 
