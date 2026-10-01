@@ -178,7 +178,7 @@ private class MarkerSync {
     private var zoom = Double.NaN
 
     fun needsUpdate(nextRoute: RoutePreview?, nextTrains: List<NetworkTrain>, nextZoom: Double): Boolean {
-        if (route === nextRoute && trains === nextTrains && abs(zoom - nextZoom) < 0.05) return false
+        if (route === nextRoute && trains == nextTrains && abs(zoom - nextZoom) < 0.05) return false
         route = nextRoute
         trains = nextTrains
         zoom = nextZoom

@@ -49,6 +49,8 @@ data class RoutePreview(
     val arrivalInstantMillis: Long? = null,
     val positionProgress: Double? = null,
     val positionStatus: String? = null,
+    /** Local receipt time; retained snapshots must not gain a new freshness window when reused. */
+    val receivedAtMillis: Long? = null,
 ) {
     val displayName: String get() = if ("Rajdhani" in name && '-' in name) {
         "${name.substringBefore('-').removeSuffix(" Central")} Rajdhani"

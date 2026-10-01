@@ -60,6 +60,7 @@ data class JourneyAlertAcknowledgement(val revision: Long, val expiresAt: Long)
 /** Gateway-only rail client. Provider credentials never enter the Android app. */
 class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) {
     private val appContext = context.applicationContext
+    internal val sourceUrl = baseUrl
     private val configuredValue = baseUrl.isNotBlank()
     private val base: String? = validateBase(baseUrl)
     private val prefs = appContext.getSharedPreferences("locomate.installation", Context.MODE_PRIVATE)
@@ -273,6 +274,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             distanceKm = journey.optDouble("distanceKm", 0.0),
             durationMinutes = journey.optInt("scheduledDurationMinutes", 0),
             isPreview = false,
+            receivedAtMillis = cachedAt ?: System.currentTimeMillis(),
             // The enriched response prefixes its ID with `run:` while the collector
             // and push subscriptions identify the same dated run without that prefix.
             runId = "$number:$originDate",

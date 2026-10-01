@@ -27,12 +27,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
@@ -45,35 +49,71 @@ import app.locomate.data.RoutePreview
 import app.locomate.data.RailGateway
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkSnapshot
+import app.locomate.data.NetworkFreshness
 import app.locomate.ui.theme.LM
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.awaitCancellation
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 115.dp) {
     var bounds by remember { mutableStateOf<NetworkBounds?>(null) }
-    var snapshot by remember { mutableStateOf<NetworkSnapshot?>(null) }
+    var prepared by remember(gateway) { mutableStateOf<NetworkFreshness.Prepared?>(null) }
+    val snapshot = prepared?.snapshot
     var error by remember { mutableStateOf<String?>(null) }
     var listing by remember { mutableStateOf<NetworkSnapshot?>(null) }
     val mapAttribution = remember { MapAttributionController() }
-    LaunchedEffect(gateway, bounds) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var networkView by remember(gateway) { mutableStateOf(NetworkFreshness.View(emptyList(), false, null)) }
+    var requestEpoch by remember { mutableIntStateOf(0) }
+    LaunchedEffect(gateway, bounds, lifecycle) {
         val visible = bounds ?: return@LaunchedEffect
         if (!gateway.configured) return@LaunchedEffect
-        delay(400)
-        try {
-            snapshot = gateway.network(visible)
-            error = null
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            error = failure.message ?: "The network feed is unavailable."
+        val epoch = ++requestEpoch
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            delay(400)
+            while (isActive) {
+                try {
+                    val response = gateway.network(visible)
+                    val parsed = withContext(Dispatchers.Default) { NetworkFreshness.prepare(response) }
+                    currentCoroutineContext().ensureActive()
+                    if (epoch == requestEpoch) {
+                        prepared = parsed
+                        networkView = parsed.at(System.currentTimeMillis())
+                        error = null
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (epoch == requestEpoch) error = failure.message ?: "The network feed is unavailable."
+                }
+                delay(60_000)
+            }
         }
     }
-    val trains = snapshot?.trains.orEmpty()
+    LaunchedEffect(prepared, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                val now = System.currentTimeMillis()
+                val view = prepared?.at(now) ?: NetworkFreshness.View(emptyList(), false, null)
+                networkView = view
+                val next = view.nextChangeAtMillis ?: awaitCancellation()
+                // Coalesce closely spaced marker expiries; no parsing or filtering every frame/second.
+                delay((next - now).coerceAtLeast(1_000))
+            }
+        }
+    }
+    val trains = networkView.trains
+    val expired = networkView.expired
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
         RailMap(if (gateway.configured) null else route,
-            networkTrains = snapshot?.trains.orEmpty(),
+            networkTrains = trains,
             onVisibleBounds = if (gateway.configured) ({ bounds = it }) else null,
             attribution = mapAttribution)
         Box(
@@ -126,13 +166,14 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
                 }
                 Text(if (gateway.configured) {
                     when {
-                        error != null -> "Last valid markers retained. ${error.orEmpty()}"
-                        snapshot != null -> "${snapshot?.trains?.size ?: 0} gateway train markers in this map view. Positions carry their own source and observation time."
+                        expired -> "Positions expired. ${error ?: "Refreshing the network…"}"
+                        error != null -> "Refresh unavailable. Valid positions remain until they expire. ${error.orEmpty()}"
+                        snapshot != null -> "${trains.size} fresh gateway train markers in this map view. Positions carry their own source and observation time."
                         else -> "Loading train positions for this map view…"
                     }
                 } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
                     color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
-                if (gateway.configured) TextButton(onClick = { listing = snapshot }, enabled = snapshot != null,
+                if (gateway.configured) TextButton(onClick = { listing = snapshot?.copy(trains = trains) }, enabled = snapshot != null && !expired,
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("Trains in view") }
                 MapAttributionButton(mapAttribution)
             }

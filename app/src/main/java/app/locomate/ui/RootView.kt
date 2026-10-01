@@ -76,6 +76,8 @@ import app.locomate.data.CommunitySync
 import app.locomate.data.CommunityLocationFilter
 import app.locomate.data.CommunityLocationService
 import app.locomate.BuildConfig
+import app.locomate.data.NotificationPermissionDraft
+import app.locomate.data.CurrentJourneyStore
 import app.locomate.data.JourneyPlan
 import app.locomate.data.JourneyPlanStore
 import app.locomate.data.JourneyStatusNotification
@@ -105,13 +107,14 @@ private data class AlertDraft(val route: RoutePreview, val channels: Set<Journey
                               val quietHours: JourneyAlertQuietHours?)
 
 @Composable
-fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
+fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway: RailGateway? = null) {
     val context = LocalContext.current
     val view = LocalView.current
     val haptics = LocalHapticFeedback.current
     val passport = remember { SavedJourneyStore(context) }
     val planStore = remember { JourneyPlanStore(context) }
-    val gateway = remember { RailGateway(context) }
+    val gateway = remember(railGateway) { railGateway ?: RailGateway(context) }
+    val currentJourney = remember(gateway) { CurrentJourneyStore(context, gateway.sourceUrl) }
     val privacy = remember(gateway) { PrivacyDataManager(context, gateway) }
     val contributionPreferences = remember { CommunityPreferences(context) }
     val contributionQueue = remember { CommunityQueue(context) }
@@ -129,8 +132,9 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     var selectedNumber by rememberSaveable { mutableStateOf("12951") }
     var liveRoute by remember { mutableStateOf<RoutePreview?>(null) }
     var statusCardRunId by remember { mutableStateOf(statusCard.activeRun()?.runId) }
-    var pendingStatusRoute by remember { mutableStateOf<RoutePreview?>(null) }
-    var pendingAlertDraft by remember { mutableStateOf<AlertDraft?>(null) }
+    var statusCardRevision by remember { mutableIntStateOf(0) }
+    var pendingStatusRequest by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingAlertRequest by rememberSaveable { mutableStateOf<String?>(null) }
     var editingAlerts by remember { mutableStateOf<RoutePreview?>(null) }
     var alertRevision by remember { mutableIntStateOf(0) }
     var alertNotice by remember { mutableStateOf<String?>(null) }
@@ -173,6 +177,11 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
+    DisposableEffect(statusCard) {
+        // Compose owns listener lifetime; reads run in an effect, never inline during a prefs commit.
+        val unsubscribe = statusCard.observe { statusCardRevision++ }
+        onDispose { unsubscribe() }
+    }
     DisposableEffect(alertStore) {
         val unsubscribe = alertStore.observe { alertRevision++ }
         onDispose { unsubscribe() }
@@ -222,10 +231,18 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     }
 
     val alertPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val draft = pendingAlertDraft
-        pendingAlertDraft = null
-        if (granted && draft != null) saveAlerts(draft)
-        else journeyMessage = "Alerts remain off. Allow notifications in Android settings to enable them."
+        val draft = NotificationPermissionDraft.decode(pendingAlertRequest, gateway.sourceUrl, alerts = true)
+        pendingAlertRequest = null
+        if (!granted) journeyMessage = "Alerts remain off. Allow notifications in Android settings to enable them."
+        else if (draft == null) journeyMessage = "Notifications are allowed. Choose journey alerts again to finish enabling them."
+        else scope.launch {
+            try {
+                val route = selectedRoute?.takeIf { it.runId == draft.reference.runId }
+                    ?: gateway.journey(draft.reference.trainNumber, draft.reference.serviceDate)
+                saveAlerts(AlertDraft(route, draft.channels, draft.quietHours))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { reportAlert("Notifications are allowed, but this journey could not reload. Choose alerts again when online. ${error.message.orEmpty()}") }
+        }
     }
     LaunchedEffect(gateway, launchRevision) {
         if (!privacyBusy) runCatching { JourneyAlertsWork.recover(context) }
@@ -253,15 +270,25 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
             .onFailure { contributionNotice = "Could not start location contribution: ${it.message ?: "check device settings"}" }
     }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val route = pendingStatusRoute
-        pendingStatusRoute = null
-        if (route?.runId != selectedRoute?.runId) return@rememberLauncherForActivityResult
-        if (granted && route != null && statusCard.show(route)) {
-            statusCardRunId = route.runId
-            StatusPushWork.enable(context)
-            journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
-        } else {
-            journeyMessage = "Allow notifications in Android settings to show the status card."
+        val draft = NotificationPermissionDraft.decode(pendingStatusRequest, gateway.sourceUrl, alerts = false)
+        pendingStatusRequest = null
+        if (!granted) journeyMessage = "Allow notifications in Android settings to show the status card."
+        else if (draft == null) journeyMessage = "Notifications are allowed. Tap Status card again to show it."
+        else {
+            val epoch = selectionEpoch
+            scope.launch {
+                try {
+                    val route = selectedRoute?.takeIf { it.runId == draft.reference.runId }
+                        ?: gateway.journey(draft.reference.trainNumber, draft.reference.serviceDate)
+                    if (selectionEpoch != epoch || currentJourney.read()?.runId != draft.reference.runId) return@launch
+                    if (statusCard.enable(route)) {
+                        statusCardRunId = route.runId
+                        StatusPushWork.enable(context)
+                        journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
+                    } else journeyMessage = "A fresh journey and enabled notifications are needed for the status card."
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { journeyMessage = "Notifications are allowed, but this journey could not reload. Tap Status card again when online. ${error.message.orEmpty()}" }
+            }
         }
     }
     val selectedPlan = remember(selectedRoute?.runId, selectedRoute?.trainNumber,
@@ -286,14 +313,27 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
         if (runId != null) StatusPushWork.unregister(context, runId)
     }
 
+    fun rememberCurrentRun(reference: JourneyAlertLink): Boolean = runCatching {
+        currentJourney.select(reference)
+        true
+    }.getOrElse {
+        journeyMessage = it.message ?: "Could not save this journey for restart."
+        false
+    }
+
     fun stopStatusCardUnless(runId: String?) {
         if (statusCardRunId != null && statusCardRunId != runId) {
             stopStatusCard()
         }
     }
 
-    LaunchedEffect(incomingAlert?.url) {
+    LaunchedEffect(incomingAlert?.url, launchRevision) {
         val link = incomingAlert ?: return@LaunchedEffect
+        if (gateway.configured && !rememberCurrentRun(link)) {
+            val activity = context as? Activity
+            if (activity?.intent?.dataString == link.url) activity.intent.data = null
+            return@LaunchedEffect
+        }
         tab = Tab.Journeys
         settingsOpen = false
         searchOpen = false
@@ -321,31 +361,35 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
         }
     }
 
-    LaunchedEffect(gateway, launchRevision) {
-        if (!gateway.configured) return@LaunchedEffect
-        if (incomingAlert != null) return@LaunchedEffect
-        val active = statusCard.activeRun() ?: return@LaunchedEffect
-        statusCardRunId = active.runId
-        StatusPushWork.enable(context)
-        if (liveRoute?.runId == active.runId) {
-            tab = Tab.Journeys
-            return@LaunchedEffect
+    LaunchedEffect(gateway, launchRevision, statusCardRevision) {
+        val active = statusCard.activeRun()
+        statusCardRunId = active?.runId
+        val savedReference = runCatching { currentJourney.read() }.getOrElse {
+                journeyMessage = "The saved journey reference could not be read. Select your train again."
+                null
+            }
+        if (!gateway.configured || StatusPushWork.deleting(context) || incomingAlert != null) return@LaunchedEffect
+        val reference = active?.let { JourneyAlertLink.fromRunId(it.runId) } ?: savedReference ?: return@LaunchedEffect
+        if (active != null) {
+            if (!rememberCurrentRun(reference)) return@LaunchedEffect
+            StatusPushWork.enable(context)
         }
+        if (liveRoute != null || selectedPreview != null) return@LaunchedEffect
         val epoch = selectionEpoch
+        journeyMessage = "Restoring ${reference.trainNumber} for ${reference.serviceDate}…"
         try {
-            val restored = gateway.journey(active.trainNumber, active.originDate)
-            if (selectionEpoch == epoch && statusCard.activeRun()?.runId == active.runId) {
+            val restored = gateway.journey(reference.trainNumber, reference.serviceDate)
+            if (selectionEpoch == epoch && incomingAlert == null) {
                 liveRoute = restored
                 selectedPreview = null
-                tab = Tab.Journeys
                 journeyMessage = null
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             if (selectionEpoch == epoch) {
-                stopStatusCard()
-                journeyMessage = "The saved status card could not refresh. Select the train again."
+                if (active != null) stopStatusCard()
+                journeyMessage = "Could not restore ${reference.runId}: ${error.message ?: "try again when online"}"
             }
         }
     }
@@ -358,7 +402,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
 
     LaunchedEffect(liveRoute, statusCardRunId) {
         val current = liveRoute
-        if (current != null && current.runId == statusCardRunId && !statusCard.show(current)) {
+        if (current != null && current.runId == statusCardRunId && !statusCard.refresh(current)) {
             stopStatusCard()
             journeyMessage = "The status card stopped because this run is stale or notifications are unavailable."
         }
@@ -427,10 +471,11 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                                 journeyMessage = "A fresh journey is required for a status card."
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                                 context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED -> {
-                                pendingStatusRoute = route
+                                pendingStatusRequest = NotificationPermissionDraft(
+                                    JourneyAlertLink(route.trainNumber, route.runDate)).encode(gateway.sourceUrl)
                                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                             }
-                            statusCard.show(route) -> {
+                            statusCard.enable(route) -> {
                                 statusCardRunId = route.runId
                                 StatusPushWork.enable(context)
                                 journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
@@ -625,6 +670,10 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                         haptics.performHapticFeedback(HapticFeedbackType.ToggleOff)
                     },
                     onOpen = { saved ->
+                        if (!saved.preview && gateway.configured && saved.originDate != null) {
+                            val reference = JourneyAlertLink.fromRunId("${saved.trainNumber}:${saved.originDate}")
+                            if (reference == null || !rememberCurrentRun(reference)) return@PassportScreen
+                        }
                         selectionEpoch++
                         val selectedEpoch = selectionEpoch
                         if (!saved.preview && !gateway.configured) {
@@ -687,6 +736,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                 tab = Tab.Journeys
             },
             onSelectLive = { train: TrainSearchResult, date: String ->
+                val reference = JourneyAlertLink.fromRunId("${train.number}:$date")
+                if (reference == null || !rememberCurrentRun(reference)) return@SearchSheet
                 selectionEpoch++
                 val selectedEpoch = selectionEpoch
                 stopStatusCardUnless("${train.number}:$date")
@@ -740,7 +791,9 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                 val draft = AlertDraft(route, channels, quietHours)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                    pendingAlertDraft = draft
+                    pendingAlertRequest = NotificationPermissionDraft(
+                        JourneyAlertLink(route.trainNumber, requireNotNull(route.runDate)), channels, quietHours)
+                        .encode(gateway.sourceUrl)
                     alertPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else saveAlerts(draft)
             })
