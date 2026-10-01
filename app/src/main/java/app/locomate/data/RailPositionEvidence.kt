@@ -11,7 +11,7 @@ object RailPositionEvidence {
     fun display(source: String?, freshness: String, observedAtMillis: Long?, cached: Boolean,
                 nowMillis: Long = System.currentTimeMillis()): PositionDisplay {
         if (source !in observedSources || observedAtMillis == null || observedAtMillis <= 0L ||
-            observedAtMillis > nowMillis + 60_000L) return PositionDisplay.Hidden
+            observedAtMillis > nowMillis) return PositionDisplay.Hidden
         val age = nowMillis - observedAtMillis
         return when {
             (cached || freshness == "stale") && age <= lastKnownWindowMillis -> PositionDisplay.Stale

@@ -31,5 +31,7 @@ class RailPositionEvidenceTest {
             RailPositionEvidence.display("official", "stale", now - 73 * 3_600_000, false, now))
         assertEquals(PositionDisplay.Hidden,
             RailPositionEvidence.display("device", "live", now + 120_000, false, now))
+        assertEquals(PositionDisplay.Hidden,
+            RailPositionEvidence.display("device", "stale", now + 30_000, false, now))
     }
 }
