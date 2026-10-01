@@ -327,6 +327,32 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
         }
     }
 
+    fun openDatedJourney(reference: JourneyAlertLink) {
+        if (!gateway.configured || !rememberCurrentRun(reference)) return
+        selectionEpoch++
+        val epoch = selectionEpoch
+        stopStatusCardUnless(reference.runId)
+        searchOpen = false
+        settingsOpen = false
+        tab = Tab.Journeys
+        selectedPreview = null
+        liveRoute = null
+        journeyMessage = "Loading ${reference.trainNumber} for ${reference.serviceDate}…"
+        scope.launch {
+            try {
+                val loaded = gateway.journey(reference.trainNumber, reference.serviceDate)
+                if (selectionEpoch == epoch) {
+                    liveRoute = loaded
+                    journeyMessage = null
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (selectionEpoch == epoch) journeyMessage = error.message ?: "This train run is unavailable."
+            }
+        }
+    }
+
     LaunchedEffect(incomingAlert?.url, launchRevision) {
         val link = incomingAlert ?: return@LaunchedEffect
         if (gateway.configured && !rememberCurrentRun(link)) {
@@ -533,7 +559,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                         }
                     }
                 )
-                Tab.Explore -> ExploreScreen(selectedRoute, gateway, bottomInset = dockInset)
+                Tab.Explore -> ExploreScreen(selectedRoute, gateway, bottomInset = dockInset,
+                    onOpenJourney = ::openDatedJourney)
                 Tab.Passport -> if (settingsOpen) SettingsScreen(
                     alertSubscriptions = alertSubscriptions,
                     alertReadError = alertReadError,
@@ -736,31 +763,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                 tab = Tab.Journeys
             },
             onSelectLive = { train: TrainSearchResult, date: String ->
-                val reference = JourneyAlertLink.fromRunId("${train.number}:$date")
-                if (reference == null || !rememberCurrentRun(reference)) return@SearchSheet
-                selectionEpoch++
-                val selectedEpoch = selectionEpoch
-                stopStatusCardUnless("${train.number}:$date")
-                searchOpen = false
-                tab = Tab.Journeys
-                selectedPreview = null
-                liveRoute = null
-                journeyMessage = "Loading ${train.number} for $date…"
-                scope.launch {
-                    try {
-                        val loaded = gateway.journey(train.number, date)
-                        if (selectionEpoch == selectedEpoch) {
-                            liveRoute = loaded
-                            journeyMessage = null
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        if (selectionEpoch == selectedEpoch) {
-                            journeyMessage = error.message ?: "This train run is unavailable."
-                        }
-                    }
-                }
+                JourneyAlertLink.fromRunId("${train.number}:$date")?.let(::openDatedJourney)
             },
         )
     }

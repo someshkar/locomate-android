@@ -10,7 +10,7 @@ object NetworkFreshness {
     private val observedSources = setOf("official", "community", "device")
 
     data class View(val trains: List<NetworkTrain>, val expired: Boolean, val nextChangeAtMillis: Long?)
-    private data class TimedTrain(val train: NetworkTrain, val observedAt: Long)
+    private data class TimedTrain(val train: NetworkTrain, val observedAt: Long, val identity: String)
 
     /** Parse a large gateway response once, off the UI thread; clocks then compare numeric deadlines. */
     fun prepare(snapshot: NetworkSnapshot): Prepared = Prepared(snapshot)
@@ -20,12 +20,13 @@ object NetworkFreshness {
         private val expires = millis(snapshot.freshUntil)
         private val candidates = snapshot.trains.mapNotNull { train ->
             val observed = millis(train.observedAt) ?: return@mapNotNull null
+            val identity = train.datedIdentity() ?: return@mapNotNull null
             val coordinate = train.coordinate
             if (!coordinate.latitude.isFinite() || coordinate.latitude !in -90.0..90.0 ||
                 !coordinate.longitude.isFinite() || coordinate.longitude !in -180.0..180.0 ||
                 train.positionKind !in kinds ||
                 (train.positionKind == "observed" && train.source !in observedSources)) return@mapNotNull null
-            TimedTrain(train, observed)
+            TimedTrain(train, observed, identity)
         }
 
         fun at(now: Long): View {
@@ -36,20 +37,21 @@ object NetworkFreshness {
                 return View(emptyList(), expired = true, nextChangeAtMillis = generated - FUTURE_TOLERANCE)
             }
             var nextChange: Long = expires
-            val visible = candidates.mapNotNull { candidate ->
+            val visible = linkedMapOf<String, TimedTrain>()
+            candidates.forEach { candidate ->
                 when {
                     candidate.observedAt > now + FUTURE_TOLERANCE -> {
                         nextChange = minOf(nextChange, candidate.observedAt - FUTURE_TOLERANCE)
-                        null
                     }
-                    candidate.observedAt < now - MAX_AGE -> null
+                    candidate.observedAt < now - MAX_AGE -> Unit
                     else -> {
                         nextChange = minOf(nextChange, candidate.observedAt + MAX_AGE + 1)
-                        candidate.train
+                        val previous = visible[candidate.identity]
+                        if (previous == null || candidate.observedAt > previous.observedAt) visible[candidate.identity] = candidate
                     }
                 }
             }
-            return View(visible, expired = false, nextChangeAtMillis = nextChange)
+            return View(visible.values.map { it.train }, expired = false, nextChangeAtMillis = nextChange)
         }
     }
 

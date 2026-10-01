@@ -168,7 +168,7 @@ class CoreAccessibilityTest {
         val train = NetworkTrain("12951:2026-10-01", "12951", "Mumbai Rajdhani", "2026-10-01",
             RailPoint(19.0, 72.8), "2026-10-01T10:00:00Z", "observed", "station-report", 8)
         compose.setContent { AuditTheme {
-            NetworkTrainListDialog(NetworkSnapshot(listOf(train), train.observedAt, "2026-10-01T10:05:00Z"), {})
+            NetworkTrainListDialog(NetworkSnapshot(listOf(train), train.observedAt, "2026-10-01T10:05:00Z"), {}, onOpenTrain = {})
         } }
         compose.enableAccessibilityChecks()
         compose.onNodeWithText("Origin date 2026-10-01", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
@@ -176,6 +176,8 @@ class CoreAccessibilityTest {
             .performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Observed 1 Oct, 15:30 IST", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("8 minutes late", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Open journey for train 12951 on 2026-10-01")
+            .performScrollTo().assertIsDisplayed().assertHasClickAction().tryPerformAccessibilityChecks()
         compose.onNodeWithText("Close train list").assertHasClickAction().tryPerformAccessibilityChecks()
         assertVisibleTextFits()
     }

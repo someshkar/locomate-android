@@ -24,10 +24,13 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.core.view.doOnLayout
 import app.locomate.data.RoutePreview
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkTrain
 import app.locomate.data.NetworkClusters
+import app.locomate.data.NetworkSelection
+import app.locomate.data.journeyReference
 import app.locomate.data.RailGeometry
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.Marker
@@ -48,6 +51,8 @@ fun RailMap(
     networkTrains: List<NetworkTrain> = emptyList(),
     onVisibleBounds: ((NetworkBounds) -> Unit)? = null,
     attribution: MapAttributionController? = null,
+    onNetworkTrainSelected: ((NetworkTrain) -> Unit)? = null,
+    onNetworkClusterSelected: ((List<NetworkTrain>) -> Unit)? = null,
 ) {
     // MapLibre initialization can block the UI thread. Draw the sheet and dark
     // map placeholder first, then create the native map on the following frame.
@@ -66,6 +71,8 @@ fun RailMap(
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
     val currentRoute = rememberUpdatedState(route)
     val currentNetworkTrains = rememberUpdatedState(networkTrains)
+    val currentTrainSelection = rememberUpdatedState(onNetworkTrainSelected)
+    val currentClusterSelection = rememberUpdatedState(onNetworkClusterSelected)
     val observedIcon = remember(context) { markerIcon(context, 0xFF37C982.toInt()) }
     val estimatedIcon = remember(context) { markerIcon(context, 0xFFFFB84D.toInt()) }
     val previewIcon = remember(context) { markerIcon(context, 0xFFBCA7FF.toInt()) }
@@ -73,6 +80,7 @@ fun RailMap(
     var styleReady by remember(route?.trainNumber, route?.runDate) { mutableStateOf(false) }
     val markerRefs = remember(route?.trainNumber, route?.runDate) { mutableListOf<Marker>() }
     val markerSync = remember(route?.trainNumber, route?.runDate) { MarkerSync() }
+    val markerSelections = remember(route?.trainNumber, route?.runDate) { mutableMapOf<Long, List<NetworkTrain>>() }
     val mapActive = remember(route?.trainNumber, route?.runDate) { java.util.concurrent.atomic.AtomicBoolean(true) }
     val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
@@ -81,37 +89,51 @@ fun RailMap(
             onCreate(null)
             getMapAsync { map ->
                 fun publishBounds() {
+                    if (!mapActive.get()) return
                     val bounds = map.projection.visibleRegion.latLngBounds
                     if (bounds.longitudeSpan > 0 && bounds.latitudeSpan > 0) {
                         currentBoundsCallback.value?.invoke(NetworkBounds(
                             bounds.longitudeWest, bounds.latitudeSouth, bounds.longitudeEast, bounds.latitudeNorth))
                     }
                 }
+                map.setOnInfoWindowClickListener { marker ->
+                    if (mapActive.get()) {
+                        when (val selection = NetworkSelection.resolve(markerSelections[marker.id].orEmpty(), currentNetworkTrains.value)) {
+                            is NetworkSelection.Journey -> currentTrainSelection.value?.invoke(selection.train)
+                            is NetworkSelection.Inspect -> currentClusterSelection.value?.invoke(selection.trains)
+                            null -> Unit
+                        }
+                    }
+                    false // Close the native info window after its explicit action.
+                }
                 map.addOnCameraIdleListener {
                     publishBounds()
                     if (map.style != null && markerSync.needsUpdate(
                             currentRoute.value, currentNetworkTrains.value, map.cameraPosition.zoom)) {
                         syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context, markerSelections,
+                            currentTrainSelection.value != null, currentClusterSelection.value != null)
                     }
                 }
                 map.uiSettings.isCompassEnabled = false
                 map.uiSettings.isAttributionEnabled = attribution == null
+                val points = route?.geometry.orEmpty()
+                val center = if (points.isEmpty()) LatLng(23.7, 76.0) else {
+                    val south = points.minOf { it.latitude }
+                    val north = points.maxOf { it.latitude }
+                    LatLng(south - (north - south) * 0.15 - 1.0,
+                        (points.minOf { it.longitude } + points.maxOf { it.longitude }) / 2)
+                }
+                map.cameraPosition = CameraPosition.Builder()
+                    .target(center)
+                    .zoom(if (points.isEmpty()) 4.55 else if (points.maxOf { it.latitude } - points.minOf { it.latitude } > 11) 4.0 else 4.3)
+                    .build()
+                // Rail data and the accessible list must not depend on a basemap download.
+                this@apply.doOnLayout { publishBounds() }
                 map.setStyle("https://tiles.openfreemap.org/styles/dark") {
                     if (!mapActive.get()) return@setStyle
                     styleReady = true
                     attribution?.attach(this@apply, map)
-                    val points = route?.geometry.orEmpty()
-                    val center = if (points.isEmpty()) LatLng(23.7, 76.0) else {
-                        val south = points.minOf { it.latitude }
-                        val north = points.maxOf { it.latitude }
-                        LatLng(south - (north - south) * 0.15 - 1.0,
-                            (points.minOf { it.longitude } + points.maxOf { it.longitude }) / 2)
-                    }
-                    map.cameraPosition = CameraPosition.Builder()
-                        .target(center)
-                        .zoom(if (points.isEmpty()) 4.55 else if (points.maxOf { it.latitude } - points.minOf { it.latitude } > 11) 4.0 else 4.3)
-                        .build()
                     if (points.size >= 2) {
                         map.addPolyline(
                             PolylineOptions()
@@ -123,7 +145,8 @@ fun RailMap(
                     if (markerSync.needsUpdate(currentRoute.value, currentNetworkTrains.value,
                             map.cameraPosition.zoom)) {
                         syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context, markerSelections,
+                            currentTrainSelection.value != null, currentClusterSelection.value != null)
                     }
                     this@apply.post { publishBounds() }
                 }
@@ -163,7 +186,8 @@ fun RailMap(
                         if (map.style != null && markerSync.needsUpdate(
                                 routeSnapshot, networkSnapshot, map.cameraPosition.zoom)) {
                             syncMarkers(map, routeSnapshot, networkSnapshot,
-                                observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                                observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context, markerSelections,
+                            currentTrainSelection.value != null, currentClusterSelection.value != null)
                         }
                     }
                 })
@@ -192,7 +216,11 @@ private fun syncMarkers(map: MapLibreMap, route: RoutePreview?, networkTrains: L
                         previewIcon: org.maplibre.android.annotations.Icon,
                         refs: MutableList<Marker>,
                         clusterIcons: MutableMap<Int, org.maplibre.android.annotations.Icon>,
-                        context: android.content.Context) {
+                        context: android.content.Context,
+                        selections: MutableMap<Long, List<NetworkTrain>>,
+                        journeyAction: Boolean,
+                        clusterAction: Boolean) {
+    selections.clear()
     refs.forEach { map.removeMarker(it) }
     refs.clear()
     route?.positionProgress?.let { progress ->
@@ -207,15 +235,18 @@ private fun syncMarkers(map: MapLibreMap, route: RoutePreview?, networkTrains: L
     }
     NetworkClusters.forZoom(networkTrains, map.cameraPosition.zoom).forEach { group ->
         val single = group.single
-        refs += map.addMarker(MarkerOptions()
+        val marker = map.addMarker(MarkerOptions()
             .position(LatLng(group.coordinate.latitude, group.coordinate.longitude))
             .title(if (single != null) "${single.trainNumber} · ${single.name}"
                 else "${group.count} trains in this area")
-            .snippet(if (single != null) "${single.positionKind} · ${single.source} · ${single.observedAt}"
-                else "Zoom in to inspect individual services")
+            .snippet(if (single != null) "${single.positionKind} · ${single.source} · ${single.observedAt}\nOrigin date ${single.originDate}" +
+                (if (journeyAction && single.journeyReference() != null) "\nOpen journey →" else "")
+                else if (clusterAction) "Inspect these trains →" else "Zoom in to inspect individual services")
             .icon(if (single != null) {
                 if (single.positionKind == "observed") observedIcon else estimatedIcon
             } else clusterIcons.getOrPut(group.count) { markerIcon(context, 0xFF009DFA.toInt(), group.count) }))
+        refs += marker
+        selections[marker.id] = group.trains
     }
 }
 

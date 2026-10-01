@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,6 +51,10 @@ import app.locomate.data.RailGateway
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkSnapshot
 import app.locomate.data.NetworkFreshness
+import app.locomate.data.JourneyAlertLink
+import app.locomate.data.NetworkTrain
+import app.locomate.data.journeyReference
+import app.locomate.data.datedIdentity
 import app.locomate.ui.theme.LM
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -60,14 +65,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitCancellation
 
+private sealed interface NetworkListScope {
+    data object All : NetworkListScope
+    data class Cluster(val identities: Set<String>) : NetworkListScope
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 115.dp) {
+fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 115.dp,
+                  onOpenJourney: ((JourneyAlertLink) -> Unit)? = null) {
     var bounds by remember { mutableStateOf<NetworkBounds?>(null) }
     var prepared by remember(gateway) { mutableStateOf<NetworkFreshness.Prepared?>(null) }
     val snapshot = prepared?.snapshot
     var error by remember { mutableStateOf<String?>(null) }
-    var listing by remember { mutableStateOf<NetworkSnapshot?>(null) }
+    var listing by remember(gateway) { mutableStateOf<NetworkListScope?>(null) }
     val mapAttribution = remember { MapAttributionController() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var networkView by remember(gateway) { mutableStateOf(NetworkFreshness.View(emptyList(), false, null)) }
@@ -111,11 +122,27 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
     }
     val trains = networkView.trains
     val expired = networkView.expired
+    fun openCurrentJourney(train: NetworkTrain) {
+        // Check again at the action boundary; a UI frame may precede the expiry timer.
+        val current = prepared?.at(System.currentTimeMillis()) ?: return
+        networkView = current
+        val reference = train.journeyReference() ?: return
+        if (train in current.trains) {
+            listing = null
+            onOpenJourney?.invoke(reference)
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
         RailMap(if (gateway.configured) null else route,
             networkTrains = trains,
             onVisibleBounds = if (gateway.configured) ({ bounds = it }) else null,
-            attribution = mapAttribution)
+            attribution = mapAttribution,
+            onNetworkTrainSelected = if (onOpenJourney == null) null else ::openCurrentJourney,
+            onNetworkClusterSelected = { members ->
+                val current = prepared?.at(System.currentTimeMillis())?.trains.orEmpty().toHashSet()
+                val valid = members.filter { it in current }
+                if (valid.isNotEmpty()) listing = NetworkListScope.Cluster(valid.mapNotNull { it.datedIdentity() }.toSet())
+            })
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
@@ -173,13 +200,22 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
                     }
                 } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
                     color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
-                if (gateway.configured) TextButton(onClick = { listing = snapshot?.copy(trains = trains) }, enabled = snapshot != null && !expired,
+                if (gateway.configured) TextButton(onClick = { listing = NetworkListScope.All }, enabled = snapshot != null && !expired,
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("Trains in view") }
                 MapAttributionButton(mapAttribution)
             }
         }
     }
-    listing?.let { NetworkTrainListDialog(it, onDismiss = { listing = null }) }
+    listing?.let { scope ->
+        val members = when (scope) {
+            NetworkListScope.All -> trains
+            is NetworkListScope.Cluster -> trains.filter { it.datedIdentity() in scope.identities }
+        }
+        snapshot?.copy(trains = members)?.let { current ->
+            NetworkTrainListDialog(current, onDismiss = { listing = null },
+                onOpenTrain = if (onOpenJourney != null) ::openCurrentJourney else null)
+        }
+    }
 }
 
 @Composable
@@ -196,7 +232,9 @@ private fun NetworkStat(label: String, value: Int, modifier: Modifier) {
 
 /** Text equivalent of the native map's GL annotations, including their source and freshness. */
 @Composable
-internal fun NetworkTrainListDialog(snapshot: NetworkSnapshot, onDismiss: () -> Unit) {
+internal fun NetworkTrainListDialog(snapshot: NetworkSnapshot, onDismiss: () -> Unit,
+                                    onOpenTrain: ((NetworkTrain) -> Unit)? = null) {
+    val rows = remember(snapshot.trains) { snapshot.trains.filter { it.datedIdentity() != null }.distinctBy { it.datedIdentity() } }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Trains in view") },
         text = {
             LazyColumn {
@@ -204,8 +242,8 @@ internal fun NetworkTrainListDialog(snapshot: NetworkSnapshot, onDismiss: () -> 
                     Text("Snapshot ${networkTime(snapshot.generatedAt)}. Positions may change after this snapshot.")
                     Spacer(Modifier.height(12.dp))
                 }
-                if (snapshot.trains.isEmpty()) item { Text("No trains in this map view.") }
-                items(snapshot.trains, key = { it.runId }) { train ->
+                if (rows.isEmpty()) item { Text("No current trains in this list.") }
+                items(rows, key = { requireNotNull(it.datedIdentity()) }) { train ->
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp).semantics(mergeDescendants = true) {}) {
                         Text("${train.trainNumber} · ${train.name}", fontWeight = FontWeight.SemiBold)
                         Text("Origin date ${train.originDate}")
@@ -213,6 +251,13 @@ internal fun NetworkTrainListDialog(snapshot: NetworkSnapshot, onDismiss: () -> 
                         Text("Observed ${networkTime(train.observedAt)}")
                         Text(train.delayMinutes?.let { if (it == 0) "On time" else if (it < 0) "${-it} minutes early" else "$it minutes late" } ?: "Delay unavailable")
                         Text("Latitude ${train.coordinate.latitude}, longitude ${train.coordinate.longitude}")
+                        if (onOpenTrain != null) {
+                            val reference = train.journeyReference()
+                            TextButton(onClick = { onOpenTrain(train) }, enabled = reference != null,
+                                modifier = Modifier.heightIn(min = 48.dp).semantics {
+                                    contentDescription = "Open journey for train ${train.trainNumber} on ${train.originDate}"
+                                }) { Text(if (reference != null) "Open ${reference.trainNumber} · ${reference.serviceDate}" else "Journey unavailable") }
+                        }
                     }
                 }
             }

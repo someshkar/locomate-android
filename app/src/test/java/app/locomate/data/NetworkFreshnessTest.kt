@@ -40,7 +40,7 @@ class NetworkFreshnessTest {
     }
 
     @Test fun preparedSnapshotSchedulesOnlyTheNextFreshnessBoundary() {
-        val old = train.copy(observedAt = time(now - 590_000))
+        val old = train.copy(runId = "other-provider-run", observedAt = time(now - 590_000))
         val prepared = NetworkFreshness.prepare(snapshot(listOf(old, train)))
         assertEquals(now + 10_001, prepared.at(now).nextChangeAtMillis)
         assertEquals(listOf(train), prepared.at(now + 10_001).trains)
@@ -51,7 +51,7 @@ class NetworkFreshnessTest {
 
     @Test fun estimatedPositionsKeepTheirExplicitKind() {
         val estimates = listOf("map-matched", "interpolated", "predicted").map {
-            train.copy(positionKind = it, source = "predicted")
+            train.copy(runId = "$it-sample", positionKind = it, source = "predicted")
         }
         assertEquals(estimates, NetworkFreshness.visibleTrains(snapshot(estimates), now))
     }
