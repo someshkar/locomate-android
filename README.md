@@ -1,6 +1,6 @@
 # Locomate for Android
 
-Native Kotlin and Jetpack Compose railway journey app. MapLibre renders an interactive dark rail map with a source-labeled train marker and route geometry above the draggable journey sheet. The primary surfaces are Journeys, Search, Explore, Passport, and Passport settings, with floating navigation.
+Native Kotlin and Jetpack Compose railway journey app. MapLibre renders an interactive dark rail map with a source-labeled train marker and route geometry above the draggable journey sheet. Explore groups dense train markers by zoom while preserving the count and source of individual services. The primary surfaces are Journeys, Search, Explore, Passport, and Passport settings, with floating navigation.
 
 ## Build and test
 

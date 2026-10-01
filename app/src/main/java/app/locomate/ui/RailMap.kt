@@ -25,6 +25,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import app.locomate.data.RoutePreview
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkTrain
+import app.locomate.data.NetworkClusters
 import app.locomate.data.RailGeometry
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.Marker
@@ -52,6 +53,7 @@ fun RailMap(
     val observedIcon = remember(context) { markerIcon(context, 0xFF37C982.toInt()) }
     val estimatedIcon = remember(context) { markerIcon(context, 0xFFFFB84D.toInt()) }
     val previewIcon = remember(context) { markerIcon(context, 0xFFBCA7FF.toInt()) }
+    val clusterIcons = remember(context) { mutableMapOf<Int, org.maplibre.android.annotations.Icon>() }
     var styleReady by remember(route?.trainNumber, route?.runDate) { mutableStateOf(false) }
     val markerRefs = remember(route?.trainNumber, route?.runDate) { mutableListOf<Marker>() }
     val mapView = remember(route?.trainNumber, route?.runDate) {
@@ -67,7 +69,11 @@ fun RailMap(
                             bounds.longitudeWest, bounds.latitudeSouth, bounds.longitudeEast, bounds.latitudeNorth))
                     }
                 }
-                map.addOnCameraIdleListener { publishBounds() }
+                map.addOnCameraIdleListener {
+                    publishBounds()
+                    if (map.style != null) syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
+                        observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
+                }
                 map.uiSettings.isCompassEnabled = false
                 map.uiSettings.isAttributionEnabled = true
                 map.setStyle("https://tiles.openfreemap.org/styles/dark") {
@@ -92,7 +98,7 @@ fun RailMap(
                         )
                     }
                     syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                        observedIcon, estimatedIcon, previewIcon, markerRefs)
+                        observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
                     this@apply.post { publishBounds() }
                 }
             }
@@ -123,9 +129,11 @@ fun RailMap(
         Box(modifier.fillMaxSize().background(Color(0xFF060708))) {
             AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize().alpha(if (styleReady) 1f else 0f),
                 update = { view ->
+                    val routeSnapshot = currentRoute.value
+                    val networkSnapshot = currentNetworkTrains.value
                     view.getMapAsync { map ->
-                        if (map.style != null) syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                            observedIcon, estimatedIcon, previewIcon, markerRefs)
+                        if (map.style != null) syncMarkers(map, routeSnapshot, networkSnapshot,
+                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context)
                     }
                 })
         }
@@ -136,7 +144,9 @@ private fun syncMarkers(map: MapLibreMap, route: RoutePreview?, networkTrains: L
                         observedIcon: org.maplibre.android.annotations.Icon,
                         estimatedIcon: org.maplibre.android.annotations.Icon,
                         previewIcon: org.maplibre.android.annotations.Icon,
-                        refs: MutableList<Marker>) {
+                        refs: MutableList<Marker>,
+                        clusterIcons: MutableMap<Int, org.maplibre.android.annotations.Icon>,
+                        context: android.content.Context) {
     refs.forEach { map.removeMarker(it) }
     refs.clear()
     route?.positionProgress?.let { progress ->
@@ -149,16 +159,21 @@ private fun syncMarkers(map: MapLibreMap, route: RoutePreview?, networkTrains: L
                     else if (route.statusLabel.startsWith("STALE")) estimatedIcon else observedIcon))
         }
     }
-    networkTrains.forEach { train ->
+    NetworkClusters.forZoom(networkTrains, map.cameraPosition.zoom).forEach { group ->
+        val single = group.single
         refs += map.addMarker(MarkerOptions()
-            .position(LatLng(train.coordinate.latitude, train.coordinate.longitude))
-            .title("${train.trainNumber} · ${train.name}")
-            .snippet("${train.positionKind} · ${train.source} · ${train.observedAt}")
-            .icon(if (train.positionKind == "observed") observedIcon else estimatedIcon))
+            .position(LatLng(group.coordinate.latitude, group.coordinate.longitude))
+            .title(if (single != null) "${single.trainNumber} · ${single.name}"
+                else "${group.count} trains in this area")
+            .snippet(if (single != null) "${single.positionKind} · ${single.source} · ${single.observedAt}"
+                else "Zoom in to inspect individual services")
+            .icon(if (single != null) {
+                if (single.positionKind == "observed") observedIcon else estimatedIcon
+            } else clusterIcons.getOrPut(group.count) { markerIcon(context, 0xFF009DFA.toInt(), group.count) }))
     }
 }
 
-private fun markerIcon(context: android.content.Context, color: Int): org.maplibre.android.annotations.Icon {
+private fun markerIcon(context: android.content.Context, color: Int, count: Int? = null): org.maplibre.android.annotations.Icon {
     val bitmap = Bitmap.createBitmap(72, 72, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -171,6 +186,12 @@ private fun markerIcon(context: android.content.Context, color: Int): org.maplib
     paint.color = color
     canvas.drawCircle(36f, 36f, 15f, paint)
     paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(36f, 36f, 4.5f, paint)
+    if (count == null) canvas.drawCircle(36f, 36f, 4.5f, paint)
+    else {
+        paint.textAlign = Paint.Align.CENTER
+        paint.textSize = if (count < 100) 27f else 22f
+        paint.isFakeBoldText = true
+        canvas.drawText(count.toString(), 36f, 45f, paint)
+    }
     return IconFactory.getInstance(context).fromBitmap(bitmap)
 }
