@@ -38,6 +38,7 @@ import org.maplibre.android.annotations.Marker
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.annotations.PolylineOptions
+import org.maplibre.android.annotations.Polyline
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
@@ -54,6 +55,8 @@ fun RailMap(
     attribution: MapAttributionController? = null,
     onNetworkTrainSelected: ((NetworkTrain) -> Unit)? = null,
     onNetworkClusterSelected: ((List<NetworkTrain>) -> Unit)? = null,
+    journeyCamera: JourneyMapController? = null,
+    sheetVisibleHeight: Float = 0f,
 ) {
     // MapLibre initialization can block the UI thread. Draw the sheet and dark
     // map placeholder first, then create the native map on the following frame.
@@ -83,6 +86,7 @@ fun RailMap(
     val markerSync = remember(route?.trainNumber, route?.runDate) { MarkerSync() }
     val markerSelections = remember(route?.trainNumber, route?.runDate) { mutableMapOf<Long, List<NetworkTrain>>() }
     val mapActive = remember(route?.trainNumber, route?.runDate) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    val routeOverlay = remember(route?.trainNumber, route?.runDate) { RouteOverlaySync() }
     val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
         MapView(context).apply {
@@ -135,14 +139,8 @@ fun RailMap(
                     if (!mapActive.get()) return@setStyle
                     styleReady = true
                     attribution?.attach(this@apply, map)
-                    if (points.size >= 2) {
-                        map.addPolyline(
-                            PolylineOptions()
-                                .addAll(points.map { LatLng(it.latitude, it.longitude) })
-                                .color(android.graphics.Color.rgb(95, 174, 245))
-                                .width(5f)
-                        )
-                    }
+                    routeOverlay.update(map, currentRoute.value)
+                    journeyCamera?.attach(this@apply, map)
                     if (markerSync.needsUpdate(currentRoute.value, currentNetworkTrains.value,
                             map.cameraPosition.zoom)) {
                         syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
@@ -173,6 +171,7 @@ fun RailMap(
             lifecycle.removeObserver(observer)
             mapActive.set(false)
             attribution?.detach(mapView)
+            journeyCamera?.detach(mapView)
             mapView.onDestroy()
         }
     }
@@ -183,7 +182,11 @@ fun RailMap(
                 update = { view ->
                     val routeSnapshot = currentRoute.value
                     val networkSnapshot = currentNetworkTrains.value
+                    journeyCamera?.update(routeSnapshot, sheetVisibleHeight)
                     view.getMapAsync { map ->
+                        if (!mapActive.get() || routeSnapshot != currentRoute.value
+                            || networkSnapshot != currentNetworkTrains.value) return@getMapAsync
+                        if (map.style != null) routeOverlay.update(map, routeSnapshot)
                         if (map.style != null && markerSync.needsUpdate(
                                 routeSnapshot, networkSnapshot, map.cameraPosition.zoom)) {
                             syncMarkers(map, routeSnapshot, networkSnapshot,
@@ -193,6 +196,22 @@ fun RailMap(
                     }
                 })
         }
+    }
+}
+
+/** A refreshed route must update its line without rebuilding the native map. */
+private class RouteOverlaySync {
+    private var geometry: List<app.locomate.data.RailPoint>? = null
+    private var line: Polyline? = null
+
+    fun update(map: MapLibreMap, route: RoutePreview?) {
+        val points = route?.geometry.orEmpty()
+        if (points == geometry) return
+        geometry = points
+        line?.let(map::removePolyline)
+        line = if (points.size >= 2) map.addPolyline(PolylineOptions()
+            .addAll(points.map { LatLng(it.latitude, it.longitude) })
+            .color(android.graphics.Color.rgb(95, 174, 245)).width(5f)) else null
     }
 }
 

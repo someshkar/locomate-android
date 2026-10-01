@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -35,6 +36,8 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -109,8 +112,16 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
     val segmentLabel = if (fullRoute) route?.routeLabel else if (boarding != null && alighting != null)
         "${boarding.name} to ${alighting.name}" else route?.routeLabel
     val mapAttribution = remember { MapAttributionController() }
+    val journeyCamera = remember { JourneyMapController() }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
-        RailMap(route, attribution = mapAttribution)
+        val density = LocalDensity.current
+        val screenHeightPx = with(density) { maxHeight.toPx() }
+        val collapsedTop = screenHeightPx * 0.47f
+        val expandedTop = screenHeightPx * 0.10f
+        val largeText = density.fontScale >= 1.5f
+        var sheetTop by remember(screenHeightPx, largeText) { mutableFloatStateOf(if (largeText) expandedTop else collapsedTop) }
+        RailMap(route, attribution = mapAttribution, journeyCamera = journeyCamera,
+            sheetVisibleHeight = screenHeightPx - sheetTop)
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
@@ -121,12 +132,18 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
             )
         )
 
-        val density = LocalDensity.current
-        val screenHeightPx = with(density) { maxHeight.toPx() }
-        val collapsedTop = screenHeightPx * 0.47f
-        val expandedTop = screenHeightPx * 0.10f
-        val largeText = density.fontScale >= 1.5f
-        var sheetTop by remember(screenHeightPx, largeText) { mutableFloatStateOf(if (largeText) expandedTop else collapsedTop) }
+        Column(Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 88.dp, end = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            MapCameraButton("Fit journey route", Icons.Outlined.MyLocation, journeyCamera.available, journeyCamera::fitRoute)
+            val positionLabel = when {
+                route?.positionProgress == null -> "Train position unavailable"
+                route.isPreview -> "Show historical sample position"
+                route.statusLabel.startsWith("STALE") -> "Show last known train position"
+                else -> "Show observed train position"
+            }
+            MapCameraButton(positionLabel, Icons.Outlined.LocationOn,
+                journeyCamera.available && route?.positionProgress != null, journeyCamera::showPosition)
+        }
         var settleJob by remember { mutableStateOf<Job?>(null) }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val expanded = sheetTop < (collapsedTop + expandedTop) / 2f
@@ -375,6 +392,17 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     item(key = "bottom-space") { Spacer(Modifier.height(24.dp)) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MapCameraButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+                            enabled: Boolean, onClick: () -> Unit) {
+    Box(Modifier.size(48.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xF0202125)), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = if (enabled) LM.Ink else LM.Ink3, modifier = Modifier.size(20.dp))
         }
     }
 }

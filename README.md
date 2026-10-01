@@ -32,6 +32,12 @@ On 2026-10-01, all **64 unit tests** passed, and Debug, instrumented-test, Relea
 
 The optimized Journey drag/scroll/collapse workload also passed one emulator dry-run case (**33.178 seconds**), using a labeled historical route. This verifies interaction only and records no physical-device performance pass. Log: `/tmp/locomate-android-journey-card-release-dryrun.log`. The Debug APK was restored and system font scale is 1.0.
 
+## Journey map controls
+
+The two quiet map actions fit the current dated route or focus its displayed train position. Position labels distinguish historical samples, observations and last-known evidence; hidden evidence disables focus. Repeated taps resolve the current route and marker. Camera padding reserves the journey sheet. Geometry refresh replaces the native polyline without recreating the map, and obsolete asynchronous map callbacks cannot apply a replaced snapshot.
+
+On 2026-10-01, Debug, instrumented-test, Release and benchmark APKs built. The native MapLibre camera case passed in **5.072 seconds**, requiring every route coordinate above the sheet, repeated focus, same-map geometry refresh and disabled hidden-position focus. Its two final captures wait for rendered GL frames and were inspected for route/marker placement; they do not establish fully loaded basemap imagery. The preceding two-case device run also passed the actual 200% system-text Journey expansion/timeline case with unsuppressed accessibility and painted-text checks. The optimized Journey drag/scroll/collapse workload passed one emulator dry-run case in **36.503 seconds**. Debug was restored and system font scale is 1.0. Logs: `/tmp/locomate-android-map-render-final-build.log`, `/tmp/locomate-android-map-render-final-device.log`, `/tmp/locomate-android-map-controls-device.log`, `/tmp/locomate-android-map-viewport-release-dryrun.log`; final captures: `/tmp/locomate-android-map-render-final-captures`. Physical performance, TalkBack and reference imagery remain unverified.
+
 ## Build and test
 
 Requirements: JDK 17, Android SDK 36, and an Android 12 (API 31) or newer device or emulator. The Gradle wrapper is included.
