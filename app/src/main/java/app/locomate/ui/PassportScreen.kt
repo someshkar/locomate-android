@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +62,12 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
     val filteredRoutes = remember(savedRoutes, year) { PassportPeriods.filter(savedRoutes, year) }
     val savedRuns = filteredRoutes.filterNot { it.preview }
     val metrics = PassportMetrics.from(filteredRoutes)
+    val periodColors = FilterChipDefaults.filterChipColors(
+        containerColor = LM.Raised,
+        labelColor = LM.Ink2,
+        selectedContainerColor = LM.Accent.copy(alpha = 0.16f),
+        selectedLabelColor = LM.Accent,
+    )
     Column(
         Modifier.fillMaxSize().background(
             Brush.verticalGradient(listOf(Color(0xFF171A2A), Color(0xFF090B11), Color(0xFF090B11)))
@@ -83,10 +91,10 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
         Text("Train origin year", color = LM.Ink2, fontSize = 12.sp)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             FilterChip(selected = year == null, onClick = { selectedYear = null }, label = { Text("All-Time") },
-                modifier = Modifier.heightIn(min = 48.dp))
+                shape = CircleShape, colors = periodColors, border = null, modifier = Modifier.heightIn(min = 48.dp))
             years.forEach { option ->
                 FilterChip(selected = year == option, onClick = { selectedYear = option }, label = { Text(option.toString()) },
-                    modifier = Modifier.heightIn(min = 48.dp))
+                    shape = CircleShape, colors = periodColors, border = null, modifier = Modifier.heightIn(min = 48.dp))
             }
         }
         Spacer(Modifier.height(20.dp))
