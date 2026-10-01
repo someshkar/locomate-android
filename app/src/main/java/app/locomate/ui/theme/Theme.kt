@@ -25,6 +25,11 @@ object LM {
     val Ink4     = Color(0xFF767D89)
     val Hairline = Color.White.copy(alpha = 0.10f)
     val SheetEdge = Color.White.copy(alpha = 0.12f)
+    // Dark lens tint; stronger than the reference's blurred glass because the
+    // native MapLibre view is not a Compose backdrop-blur source.
+    val DockTop = Color(0xF212131B)
+    val DockBottom = Color(0xE812131B)
+    val DockLabel = Color(0xFFC9CED9)
 
     // Springs — same response/damping language as iOS
     val springUI   = spring<Float>(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy)

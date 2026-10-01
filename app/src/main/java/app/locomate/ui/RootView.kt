@@ -17,6 +17,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,11 +31,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.ContactPage
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.Icon
@@ -52,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -828,35 +831,36 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
 @Composable
 fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    val lens = Brush.verticalGradient(listOf(LM.DockTop, LM.DockBottom))
+    Row(modifier.widthIn(max = 330.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(
-            color = Color(0xE82B2C31),
-            shape = RoundedCornerShape(44.dp),
+            color = Color.Transparent,
+            shape = RoundedCornerShape(36.dp),
             shadowElevation = 20.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-            modifier = Modifier.weight(1f).heightIn(min = 72.dp)
+            modifier = Modifier.weight(1f).heightIn(min = 70.dp)
         ) {
-            Row(Modifier.padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.background(lens).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val selectTab: (Tab) -> Unit = {
                     haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
                     onTab(it)
                 }
                 NavItem(Tab.Journeys, tab, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
-                NavItem(Tab.Explore, tab, "Explore", Icons.Outlined.Explore, selectTab, Modifier.weight(1f))
-                NavItem(Tab.Passport, tab, "Passport", Icons.Outlined.AccountCircle, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Explore, tab, "Explore", Icons.Outlined.Public, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Passport, tab, "Passport", Icons.Outlined.ContactPage, selectTab, Modifier.weight(1f))
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Surface(
             onClick = onSearch,
-            color = Color(0xE82B2C31),
+            color = Color.Transparent,
             shape = CircleShape,
             shadowElevation = 20.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-            modifier = Modifier.size(72.dp).semantics { contentDescription = "Search trains" }
+            modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains" }
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+            Box(Modifier.background(lens), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
             }
         }
     }
@@ -872,9 +876,10 @@ private fun NavItem(
     modifier: Modifier = Modifier
 ) {
     val active = item == selected
-    val color by animateColorAsState(if (active) LM.Ink else LM.Ink2, label = "nav ink")
+    val showLabel = LocalDensity.current.fontScale < 1.8f
+    val color by animateColorAsState(if (active) Color.White else LM.DockLabel, label = "nav ink")
     val container by animateColorAsState(
-        if (active) Color.White.copy(alpha = 0.13f) else Color.Transparent,
+        if (active) Color.White.copy(alpha = 0.07f) else Color.Transparent,
         animationSpec = spring(),
         label = "nav selection"
     )
@@ -882,18 +887,20 @@ private fun NavItem(
         onClick = { onTab(item) },
         color = container,
         shape = RoundedCornerShape(35.dp),
-        modifier = modifier.fillMaxWidth().heightIn(min = 62.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = 54.dp)
             .semantics {
                 contentDescription = label
                 this.selected = active
                 role = Role.Tab
             }
     ) {
-        Column(Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.height(3.dp))
-            Text(label, color = color, fontSize = 11.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium)
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(21.dp))
+            Spacer(Modifier.height(4.dp))
+            if (showLabel) {
+                Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

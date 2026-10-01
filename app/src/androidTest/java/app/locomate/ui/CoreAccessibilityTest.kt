@@ -63,10 +63,13 @@ class CoreAccessibilityTest {
         @ClassRule @JvmField val fontScale: TestRule = SystemFontScaleRule()
     }
 
-    @Test fun navigationKeepsLabelsAndActionsAtTwoHundredPercentText() {
+    @Test fun navigationKeepsNamedActionsAtTwoHundredPercentText() {
         compose.setContent { AuditTheme { CapsuleNavBar(Tab.Journeys, {}, {}) } }
         compose.enableAccessibilityChecks()
         compose.onNodeWithContentDescription("Journeys").assertIsSelected()
+        for (label in listOf("Journeys", "Explore", "Passport")) {
+            compose.onNodeWithContentDescription(label).assertHasClickAction().assertIsDisplayed()
+        }
         compose.onNodeWithContentDescription("Search trains").assertHasClickAction().tryPerformAccessibilityChecks()
         assertVisibleTextFits()
     }
