@@ -19,10 +19,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Bookmark
@@ -158,9 +158,9 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Spacer(Modifier.height(25.dp))
                 }
 
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
-                ) {
+                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+                    item(key = "journey-summary") {
+                    Column {
                     if (route == null) {
                         Spacer(Modifier.height(15.dp))
                         Text("Every journey starts here.", color = LM.Ink, fontSize = 29.sp,
@@ -269,10 +269,14 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     }
                     Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(12.dp))
-                    route?.calls.orEmpty().forEachIndexed { index, stop ->
-                        TimelineStop(stop, route?.isPreview == true, route?.statusLabel?.startsWith("STALE") == true, index == 0)
                     }
-                    Spacer(Modifier.height(160.dp))
+                    }
+                    }
+                    if (route != null) {
+                        itemsIndexed(route.calls, key = { index, stop -> "$index:${stop.code}" }) { index, stop ->
+                            TimelineStop(stop, route.isPreview, route.statusLabel.startsWith("STALE"), index == 0)
+                        }
+                        item(key = "bottom-space") { Spacer(Modifier.height(160.dp)) }
                     }
                 }
             }

@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -46,6 +48,18 @@ fun RailMap(
     networkTrains: List<NetworkTrain> = emptyList(),
     onVisibleBounds: ((NetworkBounds) -> Unit)? = null,
 ) {
+    // MapLibre initialization can block the UI thread. Draw the sheet and dark
+    // map placeholder first, then create the native map on the following frame.
+    var initializeMap by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        initializeMap = true
+    }
+    if (!initializeMap) {
+        Box(modifier.fillMaxSize().background(Color(0xFF060708)))
+        return
+    }
+
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
