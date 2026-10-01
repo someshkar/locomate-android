@@ -64,6 +64,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("org.maplibre.gl:android-sdk-opengl:13.5.2")
     implementation("androidx.profileinstaller:profileinstaller:1.4.0")
+    implementation("androidx.metrics:metrics-performance:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

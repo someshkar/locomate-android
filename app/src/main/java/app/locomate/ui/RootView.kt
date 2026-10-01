@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +58,7 @@ import app.locomate.data.SavedJourney
 import app.locomate.data.SavedJourneyStore
 import app.locomate.data.TrainSearchResult
 import app.locomate.ui.theme.LM
+import androidx.metrics.performance.PerformanceMetricsState
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -67,6 +69,7 @@ enum class Tab { Journeys, Explore, Passport }
 @Composable
 fun RootView() {
     val context = LocalContext.current
+    val view = LocalView.current
     val haptics = LocalHapticFeedback.current
     val passport = remember { SavedJourneyStore(context) }
     val planStore = remember { JourneyPlanStore(context) }
@@ -86,6 +89,14 @@ fun RootView() {
     var editingJourney by remember { mutableStateOf(false) }
     var planVersion by remember { mutableIntStateOf(0) }
     var savedJourneys by remember { mutableStateOf(passport.load()) }
+    LaunchedEffect(tab, searchOpen, settingsOpen, view) {
+        val screen = when {
+            searchOpen -> "Search"
+            settingsOpen -> "Settings"
+            else -> tab.name
+        }
+        PerformanceMetricsState.getHolderForHierarchy(view).state?.putState("screen", screen)
+    }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
     val selectedPlan = remember(selectedRoute?.runId, selectedRoute?.trainNumber,

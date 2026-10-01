@@ -35,6 +35,15 @@ The separate Macrobenchmark module measures ten cold launches and ten Search-she
 
 Results and Perfetto traces are copied under `macrobenchmark/build/outputs/connected_android_test_additional_output/`. CI compiles the benchmark but does not treat an emulator run as a performance pass. An emulator can validate the interaction path with `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dryRunMode.enable=true -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR`; its timing cannot establish the 400ms cold-start or 120Hz targets.
 
+For live debug profiling on a device, enable JankStats before launching the Debug app:
+
+```sh
+adb shell setprop log.tag.LocomateJank DEBUG
+adb logcat -s LocomateJank:D
+```
+
+Only janky frames are logged, with the current screen name. The listener is disabled in Release and Benchmark builds and while the app is paused.
+
 ## Rail data modes
 
 Debug builds open in an explicit historical route-preview mode unless a gateway URL is supplied. Preview packs never claim a live position or ETA. Release builds target the deployed SmartRail rail gateway by default. To override either build type, use a Gradle property:
