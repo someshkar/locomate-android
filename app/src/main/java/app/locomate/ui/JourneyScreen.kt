@@ -49,6 +49,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -68,6 +70,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                   message: String? = null, onSave: () -> Unit,
                   onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
                   onSearch: () -> Unit = {}) {
+    val haptics = LocalHapticFeedback.current
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
     val boarding = route?.calls?.firstOrNull { it.code == segment?.boardingCode }
     val alighting = route?.calls?.firstOrNull { it.code == segment?.alightingCode }
@@ -131,6 +134,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             },
                             onDragEnd = {
                                 val target = if (sheetTop < (collapsedTop + expandedTop) / 2f) expandedTop else collapsedTop
+                                haptics.performHapticFeedback(HapticFeedbackType.GestureEnd)
                                 settleJob = scope.launch {
                                     Animatable(sheetTop).animateTo(
                                         target,

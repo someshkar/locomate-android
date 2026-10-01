@@ -42,7 +42,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,6 +67,7 @@ enum class Tab { Journeys, Explore, Passport }
 @Composable
 fun RootView() {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val passport = remember { SavedJourneyStore(context) }
     val planStore = remember { JourneyPlanStore(context) }
     val gateway = remember { RailGateway(context) }
@@ -93,6 +96,11 @@ fun RootView() {
     fun updateSaved(next: List<SavedJourney>) {
         savedJourneys = next
         passport.save(next)
+    }
+
+    fun openSearch() {
+        haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+        searchOpen = true
     }
 
     LaunchedEffect(gateway, liveRoute?.runId) {
@@ -136,7 +144,7 @@ fun RootView() {
                     saved = selectedRoute?.let { SavedJourney.from(it, selectedPlan ?: JourneyPlan.default(it)).key in savedJourneys.map(SavedJourney::key) } ?: false,
                     message = journeyMessage,
                     onEdit = { editingJourney = true },
-                    onSearch = { searchOpen = true },
+                    onSearch = { openSearch() },
                     onCalendar = {
                         selectedRoute?.let { route ->
                             val board = route.calls.firstOrNull { it.code == selectedPlan?.boardingCode }
@@ -175,9 +183,13 @@ fun RootView() {
                     onSave = {
                         selectedRoute?.let { route ->
                             val entry = SavedJourney.from(route, selectedPlan ?: JourneyPlan.default(route))
-                            updateSaved(if (savedJourneys.any { it.key == entry.key })
+                            val alreadySaved = savedJourneys.any { it.key == entry.key }
+                            updateSaved(if (alreadySaved)
                                 savedJourneys.filterNot { it.key == entry.key }
                                 else savedJourneys + entry)
+                            haptics.performHapticFeedback(
+                                if (alreadySaved) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn
+                            )
                         }
                     }
                 )
@@ -194,7 +206,10 @@ fun RootView() {
                     savedRoutes = savedJourneys,
                     notice = passportNotice,
                     onSettings = { settingsOpen = true },
-                    onRemove = { key -> updateSaved(savedJourneys.filterNot { it.key == key }) },
+                    onRemove = { key ->
+                        updateSaved(savedJourneys.filterNot { it.key == key })
+                        haptics.performHapticFeedback(HapticFeedbackType.ToggleOff)
+                    },
                     onOpen = { saved ->
                         if (!saved.preview && !gateway.configured) {
                             passportNotice = "A rail gateway is needed to reopen this dated run. Your saved summary is still on this device."
@@ -237,7 +252,7 @@ fun RootView() {
         CapsuleNavBar(
             tab = tab,
             onTab = { tab = it; settingsOpen = false },
-            onSearch = { searchOpen = true },
+            onSearch = { openSearch() },
             modifier = Modifier.align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
@@ -280,12 +295,14 @@ fun RootView() {
                 planStore.save(selectedRoute, next)
                 planVersion++
                 editingJourney = false
+                haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             })
     }
 }
 
 @Composable
 fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier) {
+    val haptics = LocalHapticFeedback.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Surface(
             color = Color(0xE82B2C31),
@@ -295,9 +312,13 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             modifier = Modifier.weight(1f).height(72.dp)
         ) {
             Row(Modifier.padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                NavItem(Tab.Journeys, tab, "Journeys", Icons.Outlined.Train, onTab, Modifier.weight(1f))
-                NavItem(Tab.Explore, tab, "Explore", Icons.Outlined.Explore, onTab, Modifier.weight(1f))
-                NavItem(Tab.Passport, tab, "Passport", Icons.Outlined.AccountCircle, onTab, Modifier.weight(1f))
+                val selectTab: (Tab) -> Unit = {
+                    haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                    onTab(it)
+                }
+                NavItem(Tab.Journeys, tab, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Explore, tab, "Explore", Icons.Outlined.Explore, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Passport, tab, "Passport", Icons.Outlined.AccountCircle, selectTab, Modifier.weight(1f))
             }
         }
         Spacer(Modifier.width(12.dp))
