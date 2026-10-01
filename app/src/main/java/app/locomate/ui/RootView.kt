@@ -8,7 +8,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +45,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -341,10 +345,10 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             shape = CircleShape,
             shadowElevation = 20.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-            modifier = Modifier.size(72.dp)
+            modifier = Modifier.size(72.dp).semantics { contentDescription = "Search trains" }
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Search, contentDescription = "Search trains", tint = Color.White, modifier = Modifier.size(30.dp))
+                Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
             }
         }
     }
@@ -367,9 +371,15 @@ private fun NavItem(
         label = "nav selection"
     )
     Surface(
+        onClick = { onTab(item) },
         color = container,
         shape = RoundedCornerShape(35.dp),
-        modifier = modifier.fillMaxWidth().height(62.dp).clickable { onTab(item) }
+        modifier = modifier.fillMaxWidth().height(62.dp)
+            .semantics {
+                contentDescription = label
+                this.selected = active
+                role = Role.Tab
+            }
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))

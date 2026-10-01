@@ -43,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -151,10 +153,13 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("My Journeys", color = LM.Ink, fontSize = 33.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Surface(onClick = onSave, enabled = route != null,
-                            color = Color.White.copy(alpha = 0.09f), shape = CircleShape) {
-                            Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                            color = Color.White.copy(alpha = 0.09f), shape = CircleShape,
+                            modifier = Modifier.size(48.dp).semantics {
+                                contentDescription = if (saved) "Remove saved journey" else "Save journey"
+                            }) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                                    contentDescription = if (saved) "Remove saved journey" else "Save journey",
+                                    contentDescription = null,
                                     tint = LM.Ink, modifier = Modifier.size(22.dp))
                             }
                         }
@@ -228,12 +233,14 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Spacer(Modifier.height(18.dp))
                     if (route != null && route.calls.size > 1) {
                         Surface(onClick = onEdit, color = Color(0xFF252830),
-                            shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                            shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().semantics {
+                                contentDescription = "Edit boarding and alighting stops. Board at ${boarding?.code ?: route.originCode}, leave at ${alighting?.code ?: route.destinationCode}"
+                            }) {
+                            Row(Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Text("Board at ${boarding?.code ?: route.originCode} · Leave at ${alighting?.code ?: route.destinationCode}",
                                     color = LM.Ink2, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                Icon(Icons.Outlined.Edit, contentDescription = "Edit boarding and alighting stops",
+                                Icon(Icons.Outlined.Edit, contentDescription = null,
                                     tint = LM.Accent, modifier = Modifier.size(17.dp))
                             }
                         }

@@ -25,4 +25,4 @@ jobs:
       - name: Install Android 36 SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Test apps and compile physical-device benchmarks
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :macrobenchmark:assembleBenchmark
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :macrobenchmark:assembleBenchmark

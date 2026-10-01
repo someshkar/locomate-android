@@ -17,6 +17,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 The app was exercised on an Android 36 emulator: route selection changes the native map and Passport survives restart. On 2026-10-01, the fixed SmartRail gateway, run locally against the public RailRadar feed, supplied search, a 54-stop 12137 dated run, and clustered network markers; a saved run reopened after restart. A contract-shaped local gateway also exercised cached-run fallback.
 
+An instrumented Compose accessibility check verifies that the three tabs expose names, click actions, and selected state. Run it with `./gradlew :app:connectedDebugAndroidTest`; CI compiles the test APK.
+
 To repeat the current-feed check, start the SmartRail gateway locally after setting up its development secrets and D1 migrations. Then connect the emulator and build a loopback Debug app:
 
 ```sh
