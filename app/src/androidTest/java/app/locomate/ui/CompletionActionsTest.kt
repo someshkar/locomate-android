@@ -69,7 +69,7 @@ class CompletionActionsTest {
             } }
             compose.onNodeWithContentDescription("Search trains").assertIsDisplayed().assertIsSelected()
             screenshot("search-normal")
-            val field = compose.onNodeWithText("Train name or number").performScrollTo()
+            val field = compose.onNodeWithText("Train no. or station").performScrollTo()
             field.performClick().performTextInput("12951")
             compose.waitUntil(5_000) { keyboardHeight() > 0 }
             for (label in listOf("Journeys", "Explore", "Passport", "Search trains")) {
@@ -111,7 +111,7 @@ class CompletionActionsTest {
             compose.onNodeWithContentDescription("Search trains").performClick()
             compose.onNodeWithContentDescription("Explore").performClick().assertIsSelected()
             compose.onNodeWithText("Returned to Explore").assertExists()
-            compose.onNodeWithText("Train name or number").assertDoesNotExist()
+            compose.onNodeWithText("Train no. or station").assertDoesNotExist()
         }
     }
 
@@ -215,7 +215,7 @@ class CompletionActionsTest {
         compose.runOnIdle { assertEquals(valid, opened) }
     }
 
-    private fun enterQuery(query: String) = compose.onNodeWithText("Train name or number")
+    private fun enterQuery(query: String) = compose.onNodeWithText("Train no. or station")
         .performScrollTo().performTextReplacement(query)
 
     private fun awaitText(text: String) = compose.waitUntil(8_000) {

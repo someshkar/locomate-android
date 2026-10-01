@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
@@ -145,7 +146,30 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         if (trimmed.isEmpty()) return emptyList()
         val encoded = URLEncoder.encode(trimmed, "UTF-8")
         val data = get("/v1/trains/search?q=$encoded")
+        return decodeSearchTrains(data.getJSONArray("trains"))
+    }
+
+    suspend fun searchStations(query: String): List<StationSearchResult> {
+        val data = get("/v1/stations/search?q=${URLEncoder.encode(query.trim(), "UTF-8")}")
+        val stations = data.getJSONArray("stations")
+        require(stations.length() <= 50) { "Station catalogue is too large" }
+        return (0 until stations.length()).map { decodeStation(stations.getJSONObject(it)) }
+    }
+
+    suspend fun stationTrains(code: String): StationTrainsResult {
+        require(code.matches(Regex("[A-Z]{1,10}"))) { "Invalid station code" }
+        val data = get("/v1/stations/$code/trains")
+        val station = decodeStation(data.getJSONObject("station"))
         val trains = data.getJSONArray("trains")
+        require(station.code == code && trains.length() <= 1000) { "Invalid station timetable" }
+        val decoded = decodeSearchTrains(trains)
+        require(decoded.all { it.number.matches(Regex("[0-9]{4,6}")) && it.name.isNotBlank() && !it.live }) {
+            "Station timetable is not a static catalogue"
+        }
+        return StationTrainsResult(station, decoded, data.getBoolean("truncated"))
+    }
+
+    private fun decodeSearchTrains(trains: JSONArray): List<TrainSearchResult> {
         return (0 until trains.length()).map { i ->
             val train = trains.getJSONObject(i)
             TrainSearchResult(

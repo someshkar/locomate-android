@@ -132,6 +132,37 @@ class CoreAccessibilityTest {
         saveScreenshot("origin-selected-200")
     }
 
+    @Test fun actualStationChoicesAndHistoricalServicesRemainReadableAtTwoHundredPercentText() {
+        val routes = PreviewRoutes.load(compose.activity)
+        val train = routes.first { it.trainNumber == "12951" }
+        var selected: String? = null
+        compose.setContent { AuditTheme {
+            val gateway = androidx.compose.runtime.remember { RailGateway(compose.activity, "") }
+            NavigationScaffold(Tab.Journeys, {}, {}, searchActive = true) { inset ->
+                SearchScreen(routes, gateway, { selected = it }, { _, _ -> }, inset)
+            }
+        } }
+        compose.enableAccessibilityChecks()
+        val shortcut = "Find trains at New Delhi, NDLS"
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(androidx.compose.ui.test.hasContentDescription(shortcut))
+        compose.onNodeWithContentDescription(shortcut).assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits(); saveScreenshot("station-shortcuts-200")
+        compose.onNodeWithContentDescription(shortcut).performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
+        compose.onNodeWithText(train.name).performScrollTo().assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits(); saveScreenshot("station-services-200")
+        compose.onNodeWithText(train.name).performClick()
+        compose.runOnIdle { assertEquals("12951", selected) }
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Train no. or station"))
+        val field = compose.onNodeWithText("Train no. or station").performScrollTo()
+        field.performTextReplacement("Delhi"); field.performImeAction()
+        val previewStation = app.locomate.data.StationSearch.previewStations(routes).first { it.code == "NDLS" }
+        val label = "Find trains at ${previewStation.name}, NDLS"
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(androidx.compose.ui.test.hasContentDescription(label))
+        compose.onNodeWithContentDescription(label).assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits(); saveScreenshot("station-lookup-200")
+    }
+
     @Test fun actualRecentSelectionAndClearingRemainReadableAtTwoHundredPercentText() {
         val store = app.locomate.data.RecentTrainStore(compose.activity, "")
         assertTrue(store.clear())
@@ -145,7 +176,7 @@ class CoreAccessibilityTest {
             }
         } }
         compose.enableAccessibilityChecks()
-        val field = compose.onNodeWithText("Train name or number")
+        val field = compose.onNodeWithText("Train no. or station")
         field.performTextInput("12951")
         field.performImeAction()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
@@ -226,10 +257,10 @@ class CoreAccessibilityTest {
         } }
         compose.waitUntil(15_000) { glass.snapshot != null }
         compose.enableAccessibilityChecks()
-        val field = compose.onNodeWithText("Train name or number").performScrollTo()
+        val field = compose.onNodeWithText("Train no. or station").performScrollTo()
         field.performClick().performTextInput(train.trainNumber)
         compose.waitUntil(10_000) { glass.snapshot == null }
-        compose.onNodeWithText("Train name or number").assertIsDisplayed().tryPerformAccessibilityChecks()
+        compose.onNodeWithText("Train no. or station").assertIsDisplayed().tryPerformAccessibilityChecks()
         for (label in listOf("Journeys", "Explore", "Passport", "Search trains")) {
             compose.onNodeWithContentDescription(label).assertIsDisplayed().assertHasClickAction()
         }

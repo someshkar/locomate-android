@@ -6,6 +6,14 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +47,8 @@ import app.locomate.data.RoutePreview
 import app.locomate.data.RailGateway
 import app.locomate.data.TrainSearchResult
 import app.locomate.data.RecentTrainStore
+import app.locomate.data.StationSearchResult
+import app.locomate.data.StationSearch
 import app.locomate.ui.theme.LM
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
@@ -51,8 +61,13 @@ private data class SearchResultState(
     val trains: List<TrainSearchResult> = emptyList(),
     val error: String? = null,
     val loading: Boolean = false,
+    val stationCode: String? = null,
+    val truncated: Boolean = false,
 )
+private data class StationResultState(val query: String, val stations: List<StationSearchResult> = emptyList(),
+    val loading: Boolean = false, val error: String? = null)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     routes: List<RoutePreview>,
@@ -73,33 +88,63 @@ fun SearchScreen(
     val keyboardVisible = WindowInsets.ime.getBottom(density) > 0
     val attribution = androidx.compose.runtime.remember { MapAttributionController() }
     var query by rememberSaveable { mutableStateOf("") }
+    var selectedStationCode by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedStationName by rememberSaveable { mutableStateOf<String?>(null) }
     var date by rememberSaveable { mutableStateOf(RailGateway.indiaToday()) }
     var retry by androidx.compose.runtime.remember(gateway) { mutableIntStateOf(0) }
     val requestQuery = query.trim()
     var searchState by androidx.compose.runtime.remember(gateway) { mutableStateOf(SearchResultState("")) }
     // A result belongs only to its query, including the frame before the replacement effect starts.
-    val currentSearch = searchState.takeIf { it.query == requestQuery }
+    var stationState by androidx.compose.runtime.remember(gateway) { mutableStateOf(StationResultState("")) }
+    val currentStationSearch = stationState.takeIf { it.query == requestQuery && selectedStationCode == null }
+        ?: StationResultState(requestQuery)
+    val currentSearch = searchState.takeIf { it.query == requestQuery && it.stationCode == selectedStationCode }
         ?: SearchResultState(requestQuery, loading = gateway.configured && requestQuery.length >= 2)
     val liveResults = currentSearch.trains
     val searchError = currentSearch.error
     val searching = currentSearch.loading
-    LaunchedEffect(gateway, requestQuery, retry) {
-        searchState = SearchResultState(requestQuery, loading = gateway.configured && requestQuery.length >= 2)
+    LaunchedEffect(gateway, requestQuery, selectedStationCode, retry) {
+        val requestedStation = selectedStationCode
+        searchState = SearchResultState(requestQuery, loading = gateway.configured && requestQuery.length >= 2, stationCode = requestedStation)
         if (!gateway.configured || requestQuery.length < 2) return@LaunchedEffect
         delay(300)
         try {
-            val trains = gateway.search(requestQuery)
+            val board = requestedStation?.let { gateway.stationTrains(it) }
+            val trains = board?.trains ?: gateway.search(requestQuery)
             currentCoroutineContext().ensureActive()
-            searchState = SearchResultState(requestQuery, trains = trains)
+            searchState = SearchResultState(requestQuery, trains = trains, stationCode = requestedStation, truncated = board?.truncated == true)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             currentCoroutineContext().ensureActive()
-            searchState = SearchResultState(requestQuery, error = error.message ?: "Search unavailable.")
+            searchState = SearchResultState(requestQuery, error = error.message ?: "Search unavailable.", stationCode = requestedStation)
+        }
+    }
+    LaunchedEffect(gateway, requestQuery, selectedStationCode, retry) {
+        stationState = StationResultState(requestQuery)
+        if (selectedStationCode != null || requestQuery.length < 2 || requestQuery.none { it.isLetter() }) return@LaunchedEffect
+        if (!gateway.configured) {
+            stationState = StationResultState(requestQuery, StationSearch.previewStations(routes).filter {
+                it.code.contains(requestQuery, ignoreCase = true) || it.name.contains(requestQuery, ignoreCase = true)
+            })
+            return@LaunchedEffect
+        }
+        stationState = StationResultState(requestQuery, loading = true)
+        delay(300)
+        try {
+            val stations = gateway.searchStations(requestQuery)
+            currentCoroutineContext().ensureActive()
+            stationState = StationResultState(requestQuery, stations)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            stationState = StationResultState(requestQuery, error = error.message ?: "Station search unavailable.")
         }
     }
     val results = if (requestQuery.length < 2) emptyList() else routes.filter {
-        query.isBlank() || it.trainNumber.contains(query.trim()) || it.name.contains(query.trim(), ignoreCase = true)
+        val station = selectedStationCode
+        if (station != null) it.calls.any { stop -> stop.code == station }
+        else it.trainNumber.contains(requestQuery) || it.name.contains(requestQuery, ignoreCase = true)
     }
 
     OverviewMapLayout(bottomInset, keyboardVisible = keyboardVisible,
@@ -111,13 +156,14 @@ fun SearchScreen(
                 Column {
                     Text("Search", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp, color = LM.Ink,
                         modifier = Modifier.semantics { heading() })
-                    Text("Find trains by name or number", color = LM.Ink2, fontSize = 13.5.sp)
+                    Text("Find trains and stations", color = LM.Ink2, fontSize = 13.5.sp)
                 }
             }
             item("field") {
                 Column {
                     Spacer(Modifier.height(18.dp))
-                    SearchField(query, { query = it }, searching, onSubmit = { focus.clearFocus() })
+                    SearchField(query, { query = it; selectedStationCode = null; selectedStationName = null },
+                        searching || currentStationSearch.loading, onSubmit = { focus.clearFocus() })
                 }
             }
             if (gateway.configured) {
@@ -171,6 +217,14 @@ fun SearchScreen(
                         })
                 }
             }
+            if (selectedStationCode != null) item("station-context") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Trains at ${selectedStationName ?: selectedStationCode}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        color = LM.Ink, modifier = Modifier.semantics { heading() })
+                    Text(if (gateway.configured) "Scheduled services. Choose the train’s origin date to open a run."
+                        else "Services in the historical route pack.", color = LM.Ink2, fontSize = 13.sp)
+                }
+            }
             if (searching) item("loading") { Text("Searching…", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp)) }
             if (searchError != null) item("error") {
                 Column {
@@ -178,12 +232,13 @@ fun SearchScreen(
                     TextButton(onClick = { retry++ }) { Text("Try again", color = LM.Accent) }
                 }
             }
-            if (gateway.configured && !searching && requestQuery.length >= 2 && liveResults.isEmpty() && searchError == null) {
+            if (gateway.configured && !searching && !currentStationSearch.loading && requestQuery.length >= 2
+                && liveResults.isEmpty() && searchError == null && currentStationSearch.stations.isEmpty() && currentStationSearch.error == null) {
                 item("empty") {
                     Text("No matching trains found.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
                 }
             }
-            if (!gateway.configured && requestQuery.length >= 2 && results.isEmpty()) {
+            if (!gateway.configured && requestQuery.length >= 2 && results.isEmpty() && currentStationSearch.stations.isEmpty()) {
                 item("empty") {
                     Text("No sample train matches this search.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
                 }
@@ -204,6 +259,37 @@ fun SearchScreen(
                             sourceLabel = "Historical route pack", distanceKm = train.distanceKm))
                         onSelect(train.trainNumber)
                     })
+            }
+            if (currentSearch.truncated) item("station-limit") {
+                Text("Showing the first 1,000 scheduled services.", color = LM.Ink2, fontSize = 13.sp)
+            }
+            if (selectedStationCode == null && (requestQuery.isEmpty() || currentStationSearch.stations.isNotEmpty() || currentStationSearch.error != null)) {
+                item("stations") {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Spacer(Modifier.height(14.dp))
+                        Text("STATIONS", color = LM.Ink3, fontSize = 10.5.sp, fontFamily = PlexMono, letterSpacing = 1.5.sp,
+                            modifier = Modifier.semantics { heading() })
+                        val stations = if (requestQuery.isEmpty()) StationSearch.shortcuts else currentStationSearch.stations
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for (station in stations) TextButton(onClick = {
+                                focus.clearFocus(); query = station.code
+                                selectedStationCode = station.code; selectedStationName = station.name
+                            }, shape = RoundedCornerShape(20.dp), modifier = Modifier
+                                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                                .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                                .semantics { contentDescription = "Find trains at ${station.name}, ${station.code}" }) {
+                                Text(buildAnnotatedString {
+                                    withStyle(SpanStyle(color = LM.Accent, fontFamily = PlexMono, fontWeight = FontWeight.SemiBold)) { append(station.code) }
+                                    append(" ${station.name}")
+                                }, color = LM.Ink2, fontSize = 12.5.sp)
+                            }
+                        }
+                        currentStationSearch.error?.let { error ->
+                            Text("Station search unavailable. $error", color = LM.Ink2, fontSize = 13.sp)
+                            TextButton(onClick = { retry++ }) { Text("Retry station search") }
+                        }
+                    }
+                }
             }
             item("attribution") {
                 Column {

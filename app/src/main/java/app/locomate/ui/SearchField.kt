@@ -42,21 +42,21 @@ internal fun SearchField(value: String, onValue: (String) -> Unit, loading: Bool
         modifier = Modifier.fillMaxWidth()
             .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
             .border(1.dp, Color.White.copy(alpha = 0.09f), RoundedCornerShape(18.dp))
-            .semantics { contentDescription = "Train name or number" },
+            .semantics { contentDescription = "Train no. or station" },
         decorationBox = { input ->
             Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(painterResource(R.drawable.navigation_search), null, tint = LM.Ink3, modifier = Modifier.size(20.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     // Retain the visible label after typing, without a floating outline cutout.
-                    if (value.isNotEmpty()) Text("Train name or number", color = LM.Ink3, fontSize = 12.5.sp)
+                    if (value.isNotEmpty()) Text("Train no. or station", color = LM.Ink3, fontSize = 12.5.sp)
                     Box(Modifier.fillMaxWidth().heightIn(min = 22.dp), contentAlignment = Alignment.CenterStart) {
-                        if (value.isEmpty()) Text("Train name or number", color = LM.Ink3, fontSize = 16.sp)
+                        if (value.isEmpty()) Text("Train no. or station", color = LM.Ink3, fontSize = 16.sp)
                         input()
                     }
                 }
                 if (loading) CircularProgressIndicator(Modifier.size(20.dp), color = LM.Accent, strokeWidth = 2.dp)
-                else if (value.isNotEmpty()) IconButton(onClick = { onValue("") }, modifier = Modifier.size(48.dp)) {
+                if (value.isNotEmpty()) IconButton(onClick = { onValue("") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Outlined.Cancel, contentDescription = "Clear search", tint = LM.Ink3, modifier = Modifier.size(20.dp))
                 }
             }

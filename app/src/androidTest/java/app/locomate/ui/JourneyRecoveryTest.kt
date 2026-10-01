@@ -14,6 +14,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onAllNodesWithText
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -49,6 +51,58 @@ class JourneyRecoveryTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var launchRevision by mutableIntStateOf(0)
 
+    @Test fun stationShortcutLookupRetryAndDatedRootSelectionUseTheOrdinaryGateway() {
+        RecoveryGateway(stationFeatures = true).use { server ->
+            val current = CurrentJourneyStore(compose.activity, server.url)
+            current.clear()
+            try {
+                installRoot(server.url)
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                val shortcut = "Find trains at New Delhi, NDLS"
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription(shortcut))
+                compose.onNodeWithContentDescription(shortcut).assertIsDisplayed()
+                captureRecent("station-shortcuts-normal")
+                compose.onNodeWithContentDescription(shortcut).performClick()
+                awaitText("Station timetable temporarily unavailable")
+                compose.onNodeWithText("Try again").performScrollTo().performClick()
+                awaitText("Recovery Express")
+                chooseOriginDate(compose, "2019-02-15")
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Recovery Express"))
+                val row = compose.onNodeWithText("Recovery Express").performScrollTo().assertIsDisplayed()
+                assertTrue(row.fetchSemanticsNode().boundsInRoot.bottom <=
+                    compose.onNodeWithContentDescription("Search trains").fetchSemanticsNode().boundsInRoot.top)
+                compose.onNodeWithText("RailRadar station timetable").assertIsDisplayed()
+                captureRecent("station-services-normal")
+                row.performClick(); awaitText("SCHEDULED · NO LIVE ETA")
+                assertEquals(JourneyAlertLink("12951", "2019-02-15"), current.read())
+                assertTrue(server.paths.contains("/v1/runs/12951/2019-02-15"))
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                val field = compose.onNodeWithText("Train no. or station")
+                field.performScrollTo().performTextInput("Delhi"); field.performImeAction()
+                awaitText("Retry station search")
+                compose.onNodeWithText("Retry station search").performScrollTo().performClick()
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription(shortcut))
+                compose.onNodeWithContentDescription(shortcut).assertIsDisplayed()
+                compose.onNodeWithText("No matching trains found.").assertDoesNotExist()
+                captureRecent("station-lookup-normal")
+                compose.onNodeWithContentDescription(shortcut).performClick()
+                awaitText("Recovery Express")
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Clear search"))
+                compose.onNodeWithContentDescription("Clear search").performScrollTo().performClick()
+                field.performScrollTo().performTextReplacement("Obsolete"); field.performImeAction()
+                compose.waitUntil(10_000) { server.stationRequested.count == 0L }
+                compose.onNodeWithContentDescription("Clear search").performScrollTo().performClick()
+                server.stationRelease.countDown()
+                assertTrue(server.stationReplySent.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                compose.waitForIdle()
+                compose.onNodeWithContentDescription("Find trains at Obsolete Station, XYZ").assertDoesNotExist()
+                compose.onNodeWithText("Trains at New Delhi").assertDoesNotExist()
+                assertNoConsent()
+                assertTrue(server.paths.none { it.contains("privacy/consent") || it.contains("journey-alerts") })
+            } finally { current.clear() }
+        }
+    }
+
     @Test fun recentTrainRestoresAfterRestartAndOpensTheChosenDateWithoutSearchingAgain() {
         RecoveryGateway().use { server ->
             val current = CurrentJourneyStore(compose.activity, server.url)
@@ -57,7 +111,7 @@ class JourneyRecoveryTest {
             try {
                 installRoot(server.url)
                 compose.onNodeWithContentDescription("Search trains").performClick()
-                compose.onNodeWithText("Train name or number").performTextInput("12951")
+                compose.onNodeWithText("Train no. or station").performTextInput("12951")
                 chooseOriginDate(compose, "2026-10-01")
                 awaitText("Recovery Express")
                 compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
@@ -97,7 +151,7 @@ class JourneyRecoveryTest {
             try {
                 installRoot(server.url)
                 compose.onNodeWithContentDescription("Search trains").performClick()
-                compose.onNodeWithText("Train name or number").performTextInput("12951")
+                compose.onNodeWithText("Train no. or station").performTextInput("12951")
                 chooseOriginDate(compose, "2026-10-01")
                 awaitText("Recovery Express")
                 compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
@@ -275,8 +329,13 @@ class JourneyRecoveryTest {
     }
 }
 
-private class RecoveryGateway(private val networkTtlMillis: Long = 60_000) : AutoCloseable {
+private class RecoveryGateway(private val networkTtlMillis: Long = 60_000, private val stationFeatures: Boolean = false) : AutoCloseable {
     @Volatile var failRuns = false
+    private var failedStationBoard = false
+    private var failedStationLookup = false
+    val stationRequested = java.util.concurrent.CountDownLatch(1)
+    val stationRelease = java.util.concurrent.CountDownLatch(1)
+    val stationReplySent = java.util.concurrent.CountDownLatch(1)
     private val socket = ServerSocket(0, 10, InetAddress.getByName("127.0.0.1"))
     val url = "http://127.0.0.1:${socket.localPort}"
     val paths = CopyOnWriteArrayList<String>()
@@ -289,7 +348,8 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000) : Aut
                 socket.accept().use { connection ->
                     connection.soTimeout = 5_000
                     val input = connection.getInputStream().bufferedReader()
-                    val path = input.readLine().split(' ')[1].substringBefore('?')
+                    val rawPath = input.readLine().split(' ')[1]
+                    val path = rawPath.substringBefore('?')
                     paths += path
                     var length = 0
                     while (true) {
@@ -299,7 +359,20 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000) : Aut
                     }
                     repeat(length) { input.read() }
                     val failedRun = failRuns && path.startsWith("/v1/runs/")
+                    val failedBoard = stationFeatures && path == "/v1/stations/NDLS/trains" && !failedStationBoard
+                    if (failedBoard) failedStationBoard = true
+                    val failedLookup = stationFeatures && path == "/v1/stations/search" && !failedStationLookup
+                    if (failedLookup) failedStationLookup = true
+                    val heldStation = stationFeatures && rawPath.contains("q=Obsolete") && path == "/v1/stations/search"
+                    if (heldStation) { stationRequested.countDown(); stationRelease.await(5, java.util.concurrent.TimeUnit.SECONDS) }
                     val payload = when {
+                        failedBoard -> """{"error":{"message":"Station timetable temporarily unavailable"}}"""
+                        failedLookup -> """{"error":{"message":"Station lookup temporarily unavailable"}}"""
+                        path == "/v1/stations/search" -> if (heldStation)
+                            """{"stations":[{"code":"XYZ","name":"Obsolete Station","sourceLabel":"Fixture catalogue","sourceUpdatedAt":null}]}"""
+                            else """{"stations":[{"code":"NDLS","name":"New Delhi","sourceLabel":"RailRadar station catalogue","sourceUpdatedAt":null}]}"""
+                        path == "/v1/stations/NDLS/trains" -> """{"station":{"code":"NDLS","name":"New Delhi","sourceLabel":"RailRadar station timetable","sourceUpdatedAt":null},"truncated":false,"trains":[{"number":"12951","name":"Recovery Express","originCode":"AAA","originName":"Origin","destinationCode":"BBB","destinationName":"Destination","live":false,"sourceLabel":"RailRadar station timetable","distanceKm":0}]}"""
+                        stationFeatures && path == "/v1/trains/search" -> """{"trains":[]}"""
                         failedRun -> """{"error":{"message":"Fixture run unavailable"}}"""
                         path == "/v1/network/trains" -> network()
                         path == "/v1/auth/device-session" -> """{"accessToken":"fixture-only","expiresIn":3600}"""
@@ -308,18 +381,20 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000) : Aut
                         else -> "{}"
                     }.toByteArray()
                     connection.getOutputStream().apply {
-                        write("HTTP/1.1 ${if (failedRun) "503 Unavailable" else "200 OK"}\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        write("HTTP/1.1 ${if (failedRun || failedBoard || failedLookup) "503 Unavailable" else "200 OK"}\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
                         write(payload)
                         flush()
                     }
+                    if (heldStation) stationReplySent.countDown()
                 }
             } catch (_: SocketException) {
-                if (!socket.isClosed) throw IllegalStateException("Fixture socket failed")
+                stationReplySent.countDown()
+                if (!socket.isClosed && !stationFeatures) throw IllegalStateException("Fixture socket failed")
             }
         }
     }, "journey-recovery-fixture").apply { isDaemon = true; start() }
 
-    override fun close() { socket.close(); worker.join(1_000) }
+    override fun close() { stationRelease.countDown(); socket.close(); worker.join(1_000) }
 
     private fun network(): String {
         val now = snapshotTime

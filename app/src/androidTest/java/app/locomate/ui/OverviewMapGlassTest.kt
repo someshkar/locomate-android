@@ -143,7 +143,7 @@ class OverviewMapGlassTest {
         compose.runOnUiThread { map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(26.0, 80.0), 5.75)) }
         compose.waitUntil(10_000) { glass.snapshot?.let { it.image !== searchTexture.image } == true }
         screenshot("search-glass-normal")
-        val field = compose.onNodeWithText("Train name or number").performScrollTo()
+        val field = compose.onNodeWithText("Train no. or station").performScrollTo()
         field.performClick().performTextInput(route.trainNumber)
         compose.waitUntil(10_000) { keyboardHeight() > 0 }
         compose.runOnUiThread {
