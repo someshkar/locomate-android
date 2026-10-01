@@ -21,6 +21,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.locomate.data.PreviewRoutes
+import app.locomate.data.RailGateway
+import androidx.compose.ui.test.assertHasClickAction
+import org.junit.Assert.assertTrue
 import app.locomate.data.JourneyPlan
 import app.locomate.data.RoutePreview
 import app.locomate.data.RouteStop
@@ -36,6 +40,38 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class JourneyTimingPassportTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun overviewNavigationKeepsSavedActionsAboveTheDockAtNormalText() {
+        val route = PreviewRoutes.load(compose.activity).first()
+        val gateway = RailGateway(compose.activity, "")
+        val entry = saved("Saved Express", "2026-10-01", 8412.0)
+        var tab by mutableStateOf(Tab.Explore)
+        var opened: SavedJourney? = null
+        var settingsOpened = false
+        compose.setContent { LocomateTheme {
+            NavigationScaffold(tab, { tab = it }, {}) { inset ->
+                if (tab == Tab.Explore) ExploreScreen(route, gateway, bottomInset = inset)
+                else PassportScreen(listOf(entry), onRemove = {}, onOpen = { opened = it },
+                    onSettings = { settingsOpened = true }, bottomInset = inset)
+            }
+        } }
+        compose.onNodeWithText("The network, in preview").assertIsDisplayed()
+        screenshot("explore-normal")
+        compose.onNodeWithContentDescription("Passport").performClick().assertIsSelected()
+        compose.onNodeWithText("8,412 km").assertIsDisplayed()
+        screenshot("passport-normal")
+        compose.onNodeWithContentDescription("Open settings").assertHasClickAction().performClick()
+        compose.runOnIdle { assertTrue(settingsOpened) }
+        val savedRow = compose.onNodeWithText("Saved Express").performScrollTo().assertIsDisplayed()
+        val dock = compose.onNodeWithContentDescription("Passport")
+        assertTrue("Saved journey overlaps navigation", savedRow.fetchSemanticsNode().boundsInRoot.bottom
+            <= dock.fetchSemanticsNode().boundsInRoot.top)
+        savedRow.performClick()
+        compose.runOnIdle { assertEquals(entry, opened) }
+        val credits = compose.onNodeWithText("Map attribution").performScrollTo().assertIsDisplayed()
+        assertTrue("Passport map credits overlap navigation", credits.fetchSemanticsNode().boundsInRoot.bottom
+            <= dock.fetchSemanticsNode().boundsInRoot.top)
+    }
 
     @Test fun passportYearFiltersRestoreAndUseTheSameRowsForStatsAndOpening() {
         val current = saved("current", "2026-01-01", 400.0)

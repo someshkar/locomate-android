@@ -145,7 +145,7 @@ class CoreAccessibilityTest {
         val gateway = RailGateway(compose.activity, "")
         compose.setContent { AuditTheme { ExploreScreen(route, gateway) } }
         compose.enableAccessibilityChecks()
-        compose.onNodeWithText("The rail network").tryPerformAccessibilityChecks()
+        compose.onNodeWithText("Explore").tryPerformAccessibilityChecks()
         compose.onNodeWithText("PREVIEW").assertIsDisplayed()
         saveScreenshot("explore-200")
         assertVisibleTextFits()

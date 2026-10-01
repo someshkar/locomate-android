@@ -8,6 +8,14 @@ The [Doop canvas](https://doop.design/c/ha6YK6QvsY) is the visual reference. The
 
 `LOCOMATE_MAP_STYLE_URL` can select an HTTPS MapLibre style from a licensed satellite/hybrid provider for both Journey and Explore. Put this in local Gradle properties or pass `-PLOCOMATE_MAP_STYLE_URL=...` when building. The default is OpenFreeMap's dark vector style; no satellite provider configuration was supplied, so satellite parity is still unverified. Style URLs are bundled in the APK: use only client-safe provider tokens with appropriate restrictions. MapLibre's actual source credits remain available through Map attribution.
 
+## Shared Passport and Explore layout
+
+Both native repos now use the approved iOS composition: a native map above one rounded, scrollable bottom sheet, with the measured production dock kept outside the reading area. Explore's heading, source-aware viewport counts, dated train-list action and credits share the sheet. At large text sizes, the train-list action precedes the statistics. Passport uses neutral All-Time/year filters, the canvas's deep violet gradient card, a 56-sp distance total with 22-sp units, and 20-sp supporting metrics. Full totals remain accessible text; supporting metrics stack at enlarged text sizes.
+
+The Passport map is an unannotated basemap: saved summaries do not contain verified route geometry. Native MapLibre branding stays in its viewport, and the reachable source-credit action is in the sheet. The app retains honest saved-run and source wording instead of importing the canvas's illustrative network counts or treating saved runs as verified travel. Android uses a native gradient surface; this change does not claim backdrop blur or satellite imagery.
+
+On 2026-10-01 this layout pass built Debug, instrumented-test, and Release APKs and passed **five emulator cases in 17.105 seconds**. Three use actual 200% system text with unsuppressed accessibility and painted-text checks (Passport removal, Explore overview, credits above the production dock); one checks year-filter restoration, stats and opening at 200% Compose text; one checks normal-text navigation, saved-row opening, Settings dispatch and credits above the measured dock. Four normal/enlarged Explore and Passport captures were inspected. System font scale was restored to 1.0. Logs: `/tmp/locomate-android-overview-final-build.log`, `/tmp/locomate-android-overview-final-device.log`; inspected captures: `/tmp/locomate-android-overview-*.png`. These are focused functional and layout checks; the full reference imagery, physical TalkBack and performance remain unverified.
+
 ## Build and test
 
 Requirements: JDK 17, Android SDK 36, and an Android 12 (API 31) or newer device or emulator. The Gradle wrapper is included.

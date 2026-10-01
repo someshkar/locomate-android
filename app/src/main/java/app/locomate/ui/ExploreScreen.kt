@@ -133,77 +133,62 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
             onOpenJourney?.invoke(reference)
         }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
-        RailMap(if (gateway.configured) null else route,
-            networkTrains = trains,
-            onVisibleBounds = if (gateway.configured) ({ bounds = it }) else null,
-            attribution = mapAttribution,
-            onNetworkTrainSelected = if (onOpenJourney == null) null else ::openCurrentJourney,
-            onNetworkClusterSelected = { members ->
-                val current = prepared?.at(System.currentTimeMillis())?.trains.orEmpty().toHashSet()
-                val valid = members.filter { it in current }
-                if (valid.isNotEmpty()) listing = NetworkListScope.Cluster(valid.mapNotNull { it.datedIdentity() }.toSet())
-            })
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent, Color.Black.copy(alpha = 0.68f))
-                )
-            )
-        )
-        Surface(
-            color = Color(0xE51A1C22),
-            shape = RoundedCornerShape(30.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.13f)),
-            shadowElevation = 18.dp,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 18.dp, vertical = 17.dp)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp)) {
-                Text("EXPLORE", color = LM.Ink3, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
-                Spacer(Modifier.padding(top = 5.dp))
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("The rail network", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp,
-                        modifier = Modifier.semantics { heading() })
-                    Text(if (gateway.configured) "GATEWAY" else "PREVIEW",
-                        color = if (gateway.configured) LM.Accent else Color(0xFFBCA7FF),
-                        fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        Surface(
-            color = Color(0xF51A1C22),
-            shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-            shadowElevation = 24.dp,
-            modifier = Modifier.align(Alignment.BottomCenter).heightIn(max = maxHeight * 0.65f)
-                .padding(horizontal = 20.dp).padding(bottom = bottomInset)
-        ) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(22.dp)) {
-                Text(if (gateway.configured) "Network in view" else "India by rail",
-                    color = LM.Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                if (gateway.configured && snapshot != null) {
-                    FlowRow(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
-                        NetworkStat("IN VIEW", trains.size, Modifier.weight(1f))
-                        NetworkStat("OBSERVED", trains.count { it.positionKind == "observed" }, Modifier.weight(1f))
-                        NetworkStat("PREDICTED", trains.count { it.positionKind == "predicted" }, Modifier.weight(1f))
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090A12))) {
+        val largeText = LocalDensity.current.fontScale >= 1.5f
+        val mapHeight = if (largeText) 96.dp
+            else ((maxHeight - bottomInset) * 0.24f).coerceIn(128.dp, 190.dp)
+        Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
+            RailMap(if (gateway.configured) null else route,
+                modifier = Modifier.fillMaxWidth().height(mapHeight), networkTrains = trains,
+                onVisibleBounds = { bounds = it }, attribution = mapAttribution,
+                onNetworkTrainSelected = if (onOpenJourney != null) ::openCurrentJourney else null,
+                onNetworkClusterSelected = if (onOpenJourney != null) { selected ->
+                    listing = NetworkListScope.Cluster(selected.mapNotNull { it.datedIdentity() }.toSet())
+                } else null)
+            Surface(
+                color = Color.Transparent,
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            ) {
+                Column(Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(listOf(Color(0xF00B0C16), Color(0xFF090A12))))
+                    .verticalScroll(rememberScrollState()).padding(22.dp)) {
+                    Text("Explore", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-1.2).sp, modifier = Modifier.semantics { heading() })
+                    Text(if (gateway.configured) "The network, live" else "The network, in preview",
+                        color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+                    if (!gateway.configured) Text("PREVIEW", color = Color(0xFFBCA7FF),
+                        fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                    if (gateway.configured && largeText) NetworkTrainListButton(snapshot != null && !expired) {
+                        listing = NetworkListScope.All
                     }
-                    Spacer(Modifier.height(10.dp))
-                }
-                Text(if (gateway.configured) {
-                    when {
-                        expired -> "Positions expired. ${error ?: "Refreshing the network…"}"
-                        error != null -> "Refresh unavailable. Valid positions remain until they expire. ${error.orEmpty()}"
-                        snapshot != null -> "${trains.size} fresh gateway train markers in this map view. Positions carry their own source and observation time."
-                        else -> "Loading train positions for this map view…"
+                    if (gateway.configured && snapshot != null && !expired) {
+                        FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
+                            NetworkStat("IN VIEW", trains.size, Modifier.weight(1f))
+                            NetworkStat("OBSERVED", trains.count { it.positionKind == "observed" }, Modifier.weight(1f))
+                            NetworkStat("PREDICTED", trains.count { it.positionKind == "predicted" }, Modifier.weight(1f))
+                        }
                     }
-                } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
-                    color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
-                if (gateway.configured) TextButton(onClick = { listing = NetworkListScope.All }, enabled = snapshot != null && !expired,
-                    modifier = Modifier.heightIn(min = 48.dp)) { Text("Trains in view") }
-                MapAttributionButton(mapAttribution)
+                    if (gateway.configured && !largeText) NetworkTrainListButton(snapshot != null && !expired) {
+                        listing = NetworkListScope.All
+                    }
+                    Text("POSITION SOURCES", color = LM.Ink3, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp, modifier = Modifier.padding(top = 22.dp, bottom = 12.dp))
+                    Text(if (gateway.configured) {
+                        when {
+                            expired -> "Positions expired. ${error ?: "Refreshing the network…"}"
+                            error != null -> "Refresh unavailable. Valid positions remain until they expire. ${error.orEmpty()}"
+                            snapshot != null -> "${trains.size} fresh gateway train markers in this map view. Positions carry their own source and observation time."
+                            else -> "Loading train positions for this map view…"
+                        }
+                    } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
+                        color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+                    MapAttributionButton(mapAttribution)
+                    Spacer(Modifier.height(24.dp))
+                }
             }
         }
     }
@@ -220,10 +205,16 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
 }
 
 @Composable
+private fun NetworkTrainListButton(available: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = available,
+        modifier = Modifier.heightIn(min = 48.dp).padding(top = 12.dp)) { Text("Trains in view") }
+}
+
+@Composable
 private fun NetworkStat(label: String, value: Int, modifier: Modifier) {
     Surface(color = LM.Raised, shape = RoundedCornerShape(14.dp), modifier = modifier) {
         Column(Modifier.padding(10.dp)) {
-            Text(value.toString(), color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(value.toString(), color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             Text(label, color = LM.Ink3, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 letterSpacing = 0.5.sp)
         }

@@ -694,6 +694,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                     }
                 ) else PassportScreen(
                     savedRoutes = savedJourneys,
+                    bottomInset = dockInset,
                     notice = passportNotice,
                     onSettings = { settingsOpen = true },
                     onRemove = { key ->
