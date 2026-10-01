@@ -15,6 +15,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 The app was exercised on an Android 36 emulator: route selection changes the native map, Passport survives restart, and a contract-shaped local gateway was used to test search, dated journeys, network markers, and cached-run fallback.
 
+GitHub Actions runs the unit tests and APK build for each pull request. The Android adaptive icon and themed monochrome icon use the same route-shaped L as iOS.
+
 ## Rail data modes
 
 With no gateway URL, the app opens in an explicit historical route-preview mode. Preview packs never claim a live position or ETA. Configure production with a Gradle property:

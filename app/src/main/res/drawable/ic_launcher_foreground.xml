@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <path
+        android:pathData="M278,240 L278,629 C278,686 313,721 370,721 L750,721"
+        android:strokeColor="#22009DFA"
+        android:strokeWidth="104"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M278,240 L278,629 C278,686 313,721 370,721 L750,721"
+        android:strokeColor="#009DFA"
+        android:strokeWidth="50"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path android:fillColor="#071018"
+        android:pathData="M319,240 C319,262.6 300.6,281 278,281 C255.4,281 237,262.6 237,240 C237,217.4 255.4,199 278,199 C300.6,199 319,217.4 319,240 Z M791,721 C791,743.6 772.6,762 750,762 C727.4,762 709,743.6 709,721 C709,698.4 727.4,680 750,680 C772.6,680 791,698.4 791,721 Z" />
+    <path android:fillColor="#F5FAFF"
+        android:pathData="M301,240 C301,252.7 290.7,263 278,263 C265.3,263 255,252.7 255,240 C255,227.3 265.3,217 278,217 C290.7,217 301,227.3 301,240 Z M773,721 C773,733.7 762.7,744 750,744 C737.3,744 727,733.7 727,721 C727,708.3 737.3,698 750,698 C762.7,698 773,708.3 773,721 Z" />
+</vector>
