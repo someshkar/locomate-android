@@ -58,6 +58,8 @@ The client obtains a short-lived device session from the gateway and sends no pr
 
 Passport stores a local summary of a saved run, without PNR, seat, or personal location. Cloud backup and device transfer exclude app data, including Passport, plans, and the installation session. Historical previews are listed separately and excluded from saved-run distance. Missing route distance remains unavailable rather than being reported as zero.
 
+Settings offers **Export my data** and **Delete my data**. Export combines the current gateway installation record with all local `locomate.*` preferences and private cached runs across gateway scopes, then shares the JSON through a narrow FileProvider grant. Deletion pauses status work before requesting gateway erasure, then cancels the card, removes the Firebase installation when configured, clears local storage, and rotates the app's installation identity. A gateway error restores status delivery and leaves local data in place for a retry. Both actions are installation scoped; the app cannot access records created on another device.
+
 Cached runs, Passport entries, and personal stop choices are scoped to the configured gateway origin. Debug loopback fixtures cannot be reopened as production data. A gateway failure only uses a cached run from that same origin.
 
 The journey timeline displays scheduled, observed, predicted, and stale stop times with explicit source labels. Available stop forecasts show their P10/P50/P90 band and fallback reason. A train position marker requires a recent observation from an observed source; timetable progress and predicted positions cannot become green live markers. Map annotations are updated only when the route, network snapshot, or zoom changes.

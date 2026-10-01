@@ -19,9 +19,15 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,7 +38,9 @@ import app.locomate.ui.theme.LM
 
 @Composable
 fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
-                   onOfficialRailway: () -> Unit) {
+                   onOfficialRailway: () -> Unit, onExportData: () -> Unit,
+                   onDeleteData: () -> Unit, privacyBusy: Boolean, privacyNotice: String?) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Color(0xFF090A0D)).statusBarsPadding()
         .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(23.dp))
@@ -71,6 +79,31 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             StatusLegend("STALE", "Last saved data while refresh is unavailable", Color(0xFFFFB84D))
             StatusLegend("PREVIEW", "Historical sample, never live", Color(0xFFBCA7FF))
         }
+        Spacer(Modifier.height(14.dp))
+        SettingsCard("YOUR DATA") {
+            Text("Export your gateway record and this device's saved journeys, plans, and cached runs. The file can contain location and session tokens; share it only with a destination you trust.",
+                color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+            Spacer(Modifier.height(14.dp))
+            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF162B3D),
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !privacyBusy, onClick = onExportData)) {
+                Text(if (privacyBusy) "Working…" else "Export my data", color = LM.Ink,
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(16.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF352020),
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !privacyBusy) {
+                    showDeleteConfirm = true
+                }) {
+                Text("Delete my data", color = Color(0xFFFFB3B3),
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(16.dp))
+            }
+            if (privacyNotice != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(privacyNotice, color = LM.Ink2, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+        }
         Spacer(Modifier.height(25.dp))
         Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFF162B3D),
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOfficialRailway)) {
@@ -82,6 +115,17 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
         }
         Spacer(Modifier.height(140.dp))
     }
+    if (showDeleteConfirm) AlertDialog(
+        onDismissRequest = { showDeleteConfirm = false },
+        title = { Text("Delete all Locomate data?") },
+        text = { Text("This removes your gateway installation, saved journeys, cached runs, and status card. It cannot be undone.") },
+        confirmButton = {
+            TextButton(onClick = { showDeleteConfirm = false; onDeleteData() }) {
+                Text("Delete server and device data", color = Color(0xFFD64949))
+            }
+        },
+        dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
+    )
 }
 
 @Composable

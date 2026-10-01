@@ -71,6 +71,14 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     // A bad production URL remains an error; it must never activate preview.
     val configured: Boolean get() = configuredValue
 
+    /** The gateway export is kept intact so new server fields are not dropped. */
+    suspend fun exportPrivacyData(): JSONObject = authenticatedRequest("/v1/privacy/export", "GET", null)
+
+    /** Returns only after the authenticated installation was deleted on the gateway. */
+    suspend fun deletePrivacyData() {
+        authenticatedRequest("/v1/privacy/installation", "DELETE", null)
+    }
+
     /** The FCM target is a Firebase Installation ID from the native SDK. */
     suspend fun registerAndroidStatus(runId: String, fcmTarget: String) {
         require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }

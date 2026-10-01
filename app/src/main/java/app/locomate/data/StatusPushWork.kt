@@ -19,6 +19,7 @@ object StatusPushWork {
     private const val PREFS = "locomate.fcm-target"
     private const val KEY_TARGET = "target"
     private const val KEY_ACTIVE_RUN_ID = "activeRunId"
+    private const val KEY_DELETING = "deletingInstallation"
     private const val KEY_ACTION = "action"
     private const val KEY_RUN_ID = "runId"
     private const val ACTION_SYNC = "sync"
@@ -26,9 +27,11 @@ object StatusPushWork {
     private const val ACTION_EXPIRE = "expire"
 
     private fun available(context: Context): Boolean = FirebaseApp.getApps(context).isNotEmpty()
+    private fun deleting(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_DELETING, false)
 
     fun enable(context: Context) {
-        if (!available(context)) return
+        if (!available(context) || deleting(context)) return
         val active = JourneyStatusNotification(context).activeRun() ?: return
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_ACTIVE_RUN_ID, active.runId).apply()
@@ -39,6 +42,7 @@ object StatusPushWork {
     }
 
     fun registered(context: Context, target: String) {
+        if (deleting(context)) return
         if (target.length !in 20..4096 || target.any { it.code !in 0x21..0x7e }) return
         if (JourneyStatusNotification(context).activeRun() == null) return
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_TARGET, target).apply()
@@ -46,6 +50,7 @@ object StatusPushWork {
     }
 
     fun unregister(context: Context, runId: String) {
+        if (deleting(context)) return
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (preferences.getString(KEY_ACTIVE_RUN_ID, null) == runId) {
             preferences.edit().remove(KEY_ACTIVE_RUN_ID).apply()
@@ -58,7 +63,7 @@ object StatusPushWork {
     }
 
     fun scheduleExpiryCheck(context: Context) {
-        if (!available(context)) return
+        if (!available(context) || deleting(context)) return
         val request = OneTimeWorkRequestBuilder<StatusPushWorker>()
             .setInputData(Data.Builder().putString(KEY_ACTION, ACTION_EXPIRE).build())
             .setInitialDelay(11, TimeUnit.MINUTES)
@@ -67,8 +72,28 @@ object StatusPushWork {
             "status-push-expiry", ExistingWorkPolicy.REPLACE, request)
     }
 
+    /** Prevent late token callbacks and workers from recreating a deleted gateway session. */
+    fun beginPrivacyDeletion(context: Context) {
+        check(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_DELETING, true).commit()) { "Could not pause status delivery" }
+        // Status delivery is currently the only WorkManager producer in this app.
+        WorkManager.getInstance(context).cancelAllWork().result.get(10, TimeUnit.SECONDS)
+        if (available(context)) {
+            FirebaseMessaging.getInstance().isAutoInitEnabled = false
+            FirebaseMessaging.getInstance().unregister()
+        }
+    }
+
+    fun restoreAfterPrivacyDeletion(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_DELETING).commit()
+        enable(context)
+    }
+
+    fun finishPrivacyDeletion(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+
     private fun enqueue(context: Context, action: String, runId: String?) {
-        if (!available(context)) return
+        if (!available(context) || deleting(context)) return
         val input = Data.Builder().putString(KEY_ACTION, action).apply {
             if (runId != null) putString(KEY_RUN_ID, runId)
         }.build()
@@ -84,6 +109,7 @@ object StatusPushWork {
 
     class StatusPushWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
         override suspend fun doWork(): Result {
+            if (deleting(applicationContext)) return Result.success()
             val gateway = RailGateway(applicationContext)
             return try {
                 when (inputData.getString(KEY_ACTION)) {

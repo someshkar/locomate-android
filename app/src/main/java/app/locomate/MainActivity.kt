@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.metrics.performance.JankStats
 import androidx.metrics.performance.FrameDataApi31
@@ -23,13 +24,16 @@ import app.locomate.ui.theme.LocomateTheme
 class MainActivity : ComponentActivity() {
     private var jankStats: JankStats? = null
     private var launchRevision by mutableIntStateOf(0)
+    private var dataRevision by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             LocomateTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    RootView(launchRevision)
+                    key(dataRevision) {
+                        RootView(launchRevision, onDataReset = { dataRevision++ })
+                    }
                 }
             }
         }

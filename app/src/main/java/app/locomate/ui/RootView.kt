@@ -1,14 +1,17 @@
 package app.locomate.ui
 
 import android.Manifest
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.CalendarContract
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import androidx.core.content.FileProvider
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
@@ -59,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.PreviewRoutes
+import app.locomate.data.PrivacyDataManager
 import app.locomate.BuildConfig
 import app.locomate.data.JourneyPlan
 import app.locomate.data.JourneyPlanStore
@@ -79,13 +83,14 @@ import kotlinx.coroutines.CancellationException
 enum class Tab { Journeys, Explore, Passport }
 
 @Composable
-fun RootView(launchRevision: Int = 0) {
+fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     val context = LocalContext.current
     val view = LocalView.current
     val haptics = LocalHapticFeedback.current
     val passport = remember { SavedJourneyStore(context) }
     val planStore = remember { JourneyPlanStore(context) }
     val gateway = remember { RailGateway(context) }
+    val privacy = remember(gateway) { PrivacyDataManager(context, gateway) }
     val statusCard = remember { JourneyStatusNotification(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val routes = remember(gateway.configured) {
@@ -105,6 +110,8 @@ fun RootView(launchRevision: Int = 0) {
     var editingJourney by remember { mutableStateOf(false) }
     var planVersion by remember { mutableIntStateOf(0) }
     var savedJourneys by remember { mutableStateOf(passport.load()) }
+    var privacyBusy by remember { mutableStateOf(false) }
+    var privacyNotice by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tab, searchOpen, settingsOpen, view) {
         if (!BuildConfig.DEBUG) return@LaunchedEffect
         val screen = when {
@@ -318,6 +325,52 @@ fun RootView(launchRevision: Int = 0) {
                     productionMode = gateway.configured,
                     savedCount = savedJourneys.size,
                     onBack = { settingsOpen = false },
+                    privacyBusy = privacyBusy,
+                    privacyNotice = privacyNotice,
+                    onExportData = {
+                        scope.launch {
+                            privacyBusy = true
+                            privacyNotice = null
+                            try {
+                                val file = privacy.prepareExport()
+                                val uri = FileProvider.getUriForFile(context,
+                                    "${BuildConfig.APPLICATION_ID}.fileprovider", file)
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    clipData = ClipData.newRawUri("Locomate data", uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(send, "Export Locomate data"))
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                privacyNotice = error.message ?: "Could not prepare your data export. Try again."
+                            } finally {
+                                privacyBusy = false
+                            }
+                        }
+                    },
+                    onDeleteData = {
+                        scope.launch {
+                            privacyBusy = true
+                            privacyNotice = null
+                            try {
+                                val complete = privacy.deleteAll()
+                                Toast.makeText(context,
+                                    if (complete) "Locomate data deleted"
+                                    else "Server data deleted; reinstall to remove remaining device data",
+                                    Toast.LENGTH_LONG).show()
+                                privacyBusy = false
+                                onDataReset()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                privacyNotice = error.message ?: "Could not delete your data. Try again."
+                                privacyBusy = false
+                            }
+                        }
+                    },
                     onOfficialRailway = {
                         context.startActivity(Intent(Intent.ACTION_VIEW,
                             Uri.parse("https://enquiry.indianrail.gov.in/mntes/")))

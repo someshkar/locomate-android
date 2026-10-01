@@ -3,6 +3,7 @@ package app.locomate.data
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
+import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertFalse
@@ -13,6 +14,31 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class JourneyStatusNotificationTest {
+    @Test
+    fun deletionGateIgnoresLateFcmRegistration() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        val card = JourneyStatusNotification(context)
+        val preferences = context.getSharedPreferences("locomate.fcm-target", Context.MODE_PRIVATE)
+        val route = PreviewRoutes.load(context).first().copy(
+            isPreview = false, runId = "12951:2026-10-01", runDate = "2026-10-01",
+            statusLabel = "PREDICTED · LIVE INPUT",
+        )
+        card.cancel()
+        preferences.edit().clear().commit()
+        try {
+            assertTrue(card.show(route))
+            StatusPushWork.beginPrivacyDeletion(context)
+            StatusPushWork.registered(context, "a".repeat(32))
+            assertNull(preferences.getString("target", null))
+        } finally {
+            StatusPushWork.restoreAfterPrivacyDeletion(context)
+            card.cancel()
+            StatusPushWork.finishPrivacyDeletion(context)
+        }
+    }
+
     @Test
     fun pushUpdatesOnlyTheEnabledRunAndEndRemovesItsCard() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
