@@ -25,6 +25,8 @@ On 2026-10-01, the recovery/freshness gate passed **33 unit tests and 12 focused
 
 The Explore-to-journey gate on 2026-10-01 passed **37 unit tests and 6 distinct focused instrumented cases** across the initial five passing cases and a corrected two-case rerun (one overlap). Coverage includes native selection policy, opaque provider ID reuse, service-date identity, newest eligible duplicate selection, live/cache navigation with no new consent, expiring open-list actions, and the new list action at 200% text. The first expiry test timed out because Compose’s virtual clock advanced only 3 seconds while 18 seconds passed on the device; it now waits for the fixed snapshot’s wall deadline and explicitly advances the Compose scheduler before checking automatic removal. Production expiry logic was unchanged.
 
+The natural timing and Passport filter gate passed **44 unit tests and 3 focused instrumented cases** on 2026-10-01. Coverage includes year-filter restoration and removal, the selected boarding stop's future departure after the origin has departed, preview countdown suppression, and qualified stale delay wording. The two large-text cases use Compose's 200% font-scale override; they do not establish a physical TalkBack pass. Countdown and Passport screenshots use deterministic test fixtures.
+
 The network map has a scrollable “Trains in view” list with dated runs, source/observation time, delay, coordinates, and explicit open-journey actions. A single marker’s native info window also opens its dated journey; cluster info windows inspect their member list. Both paths recheck current membership and freshness at the tap, then use the same live/cache loader and persisted dated selection as Search. General lists follow all current trains; cluster lists retain their selected member identities. Provider IDs are combined with validated train/date fields, and the newest eligible duplicate wins. No display label is parsed as a journey identity, and selection grants no notification or contribution consent. Rail data loading starts from native viewport bounds independently of basemap download success. Journey station rows group their source and time for assistive reading. A reachable 48dp “Map attribution” button opens MapLibre's actual source credits; it replaces the SDK's small icon hidden beneath the sheet. Physical TalkBack reading order, focus during live map updates, map-credit link navigation, and switch/keyboard access still require a device review; automated semantics and emulator checks do not establish those passes.
 
 To repeat the current-feed check, start the SmartRail gateway locally after setting up its development secrets and D1 migrations. Then connect the emulator and build a loopback Debug app:
@@ -37,13 +39,28 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 GitHub Actions runs the unit tests and APK build for each pull request. The Android adaptive icon and themed monochrome icon use the same route-shaped L as iOS.
 
-The separate Macrobenchmark module measures ten cold launches and ten Search-sheet open/close interactions over the map. It builds a locally signed, non-debuggable app variant and captures startup and frame traces. Run it on an Android 12 or newer **physical device** with a stable refresh rate:
+The separate Macrobenchmark module measures ten cold launches, ten Search-sheet open/close interactions, and ten Journey-sheet drag/scroll cycles over the map. It builds a locally signed, non-debuggable app variant and captures startup, frame, and (for Journey) peak app-memory metrics. Run it on an Android 12 or newer **physical device** with a stable refresh rate. Supply a real dated run available from the configured HTTPS gateway:
 
 ```sh
-./gradlew :macrobenchmark:connectedBenchmarkAndroidTest
+./gradlew :macrobenchmark:connectedBenchmarkAndroidTest \
+  '-Pandroid.testInstrumentationRunnerArguments.locomate.journeyUrl=locomate://journeys/TRAIN?date=YYYY-MM-DD'
 ```
 
-Results and Perfetto traces are copied under `macrobenchmark/build/outputs/connected_android_test_additional_output/`. CI compiles the benchmark but does not treat an emulator run as a performance pass. An emulator can validate the interaction path with `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dryRunMode.enable=true -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR`; its timing cannot establish the 400ms cold-start or 120Hz targets.
+Replace `TRAIN` and `YYYY-MM-DD` with the real train number and origin date. The Journey case requires a loaded run and map style, rejects preview/cached data outside dry-run mode, and measures sheet expansion, content scrolling, and collapse. Initial network work occurs in setup; tile caches are retained between iterations. These measurements describe this workload, not a cold network fetch or total device memory.
+
+Results and Perfetto traces are copied under `macrobenchmark/build/outputs/connected_android_test_additional_output/`. CI compiles the benchmark but does not treat an emulator run as a performance pass. The preview interaction can be checked on an emulator with:
+
+```sh
+./gradlew :macrobenchmark:connectedBenchmarkAndroidTest \
+  -PLOCOMATE_RAIL_API_URL= \
+  '-Pandroid.testInstrumentationRunnerArguments.class=app.locomate.macrobenchmark.LocomateBenchmark#journeySheetOverMap' \
+  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dryRunMode.enable=true \
+  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR
+```
+
+Emulator timing cannot establish the 400ms cold-start or 120Hz targets.
+
+On 2026-10-01, the new Journey drag/scroll/collapse dry run passed on the Android 36 emulator. Its gestures avoid the floating dock, and the test checks changed visible content rather than treating UiAutomator's “can still scroll” result as evidence of movement. This verifies the workload path only; physical frame, startup, and memory baselines remain unmeasured.
 
 For live debug profiling on a device, enable JankStats before launching the Debug app:
 
@@ -66,6 +83,8 @@ The client obtains a short-lived device session from the gateway and sends no pr
 
 Passport stores a local summary of a saved run, without PNR, seat, or personal location. Cloud backup and device transfer exclude app data, including Passport, plans, and the installation session. Historical previews are listed separately and excluded from saved-run distance. Missing route distance remains unavailable rather than being reported as zero.
 
+Passport offers All-Time and train-origin-year filters. The selected period applies to both rows and summary totals. Preview and undated legacy entries appear only in All-Time; previews remain excluded from real-run totals. Removing the final entry in a selected year returns the view to All-Time.
+
 Settings offers **Export my data** and **Delete my data**. Export combines the current gateway installation record with all local `locomate.*` preferences (including alert choices, pending mutations and deduplication IDs), private cached runs, and community contribution files across gateway scopes, then shares the JSON through a narrow FileProvider grant. Deletion stops contribution and pauses both push consumers before requesting gateway erasure, then cancels notifications, removes the Firebase installation when configured, clears local storage, and rotates the app's installation identity. A durable deletion latch remains through gateway failures or partial device cleanup; it blocks new ordinary requests and device sessions, collection, status cards, and alert registration until explicit deletion retry completes. Settings explains how to retry. Both actions are installation scoped; the app cannot access records created on another device.
 
 The current dated journey is restored after Activity or process recreation through the same live/cache loader. Only its run reference and gateway scope are persisted; an explicit notification or dated deep link takes precedence. Source changes and data deletion clear that reference. Restoring it does not enable contribution, a Status card, or journey alerts. Permission requests preserve the explicitly selected run and alert choices through saved instance state and validate the source and consent notice before using a returned grant.
@@ -75,6 +94,8 @@ Cached runs, Passport entries, and personal stop choices are scoped to the confi
 The journey timeline displays scheduled, observed, predicted, and stale stop times with explicit source labels. Available stop forecasts show their P10/P50/P90 band and fallback reason. A train position marker requires a recent observation from an observed source; timetable progress and predicted positions cannot become green live markers. Explore refreshes the visible bounds every minute while active and discards late completions for superseded bounds. Markers disappear when the response expires or their evidence exceeds ten minutes, even if a refresh fails; malformed coordinates, clocks, or observed provenance are hidden. Snapshot timestamps are parsed once off the UI thread, and an expiry timer updates visibility at the next deadline or resume. Map annotations are updated only when the route, marker content, or zoom changes.
 
 Boarding and alighting stops can be selected for each preview route or dated run. The selection is private to the device and is restored from a saved Passport segment. Passport uses known station distance for a partial journey and leaves unknown distance or duration unavailable. Native haptics mark tab and search actions, Passport changes, plan saves, and sheet release.
+
+A future known departure at the selected boarding stop shows a full-word countdown ending “until scheduled departure”. It follows the active screen's clock, identifies a cached timetable, and disappears for passed/departed stops, unknown departures, and historical previews. Delay text uses “minutes early/late” with observed, predicted, or last-known qualifiers.
 
 Dated journeys can be shared through Android's native share sheet or inserted into a calendar with scheduled departure and arrival times. Preview journeys can be shared with their preview label but cannot be added to a calendar.
 

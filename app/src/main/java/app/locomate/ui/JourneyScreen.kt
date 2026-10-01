@@ -41,8 +41,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +61,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
@@ -68,10 +71,16 @@ import androidx.compose.ui.unit.sp
 import app.locomate.data.RoutePreview
 import app.locomate.data.RouteStop
 import app.locomate.data.JourneyPlan
+import app.locomate.data.RailTimeText
 import app.locomate.ui.theme.LM
 import app.locomate.ui.theme.PlexMono
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.awaitCancellation
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -228,6 +237,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
                     Spacer(Modifier.height(12.dp))
+                    ScheduledDepartureCountdown(route, segment)
                     Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 21.sp,
                         fontWeight = FontWeight.SemiBold, lineHeight = 24.sp)
                     Spacer(Modifier.height(3.dp))
@@ -360,6 +370,30 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
     }
 }
 
+@Composable
+private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?) {
+    val boarding = remember(route, plan) { RailTimeText.boardingDeparture(route, plan) } ?: return
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var now by remember(boarding) { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(boarding, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                now = System.currentTimeMillis()
+                val remaining = boarding.departureAtMillis - now
+                if (remaining <= 0) awaitCancellation()
+                delay(minOf(60_000, remaining))
+            }
+        }
+    }
+    RailTimeText.untilScheduledDeparture(boarding.departureAtMillis, now)?.let { countdown ->
+        Text(countdown, color = LM.Ink, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
+        Spacer(Modifier.height(5.dp))
+        Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}Scheduled boarding at ${boarding.stationCode}",
+            color = LM.Ink2, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, first: Boolean) {
@@ -402,6 +436,11 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
             Spacer(Modifier.height(4.dp))
             Text("${stop.code}  ·  $stateLabel", color = stateColor, fontSize = 10.sp,
                 fontWeight = FontWeight.Medium, fontFamily = PlexMono, letterSpacing = 0.7.sp)
+            if (!preview && stop.delayMinutes != null && (observed || forecast)) {
+                val basis = if (stale) "Last known" else if (observed) "Observed" else "Predicted"
+                Text("$basis · ${RailTimeText.delay(stop.delayMinutes)}", color = stateColor, fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 5.dp))
+            }
             val detail = when {
                 forecast && stop.forecastP10 != null && stop.forecastP90 != null ->
                     "P10 ${stop.forecastP10}  ·  P50 ${stop.forecastP50}  ·  P90 ${stop.forecastP90}"

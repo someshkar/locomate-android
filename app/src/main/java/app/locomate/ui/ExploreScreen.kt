@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.RoutePreview
+import app.locomate.data.RailTimeText
 import app.locomate.data.RailGateway
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkSnapshot
@@ -249,7 +250,7 @@ internal fun NetworkTrainListDialog(snapshot: NetworkSnapshot, onDismiss: () -> 
                         Text("Origin date ${train.originDate}")
                         Text("${train.positionKind.replaceFirstChar { it.uppercase() }} position · Source: ${train.source}")
                         Text("Observed ${networkTime(train.observedAt)}")
-                        Text(train.delayMinutes?.let { if (it == 0) "On time" else if (it < 0) "${-it} minutes early" else "$it minutes late" } ?: "Delay unavailable")
+                        Text(RailTimeText.delay(train.delayMinutes))
                         Text("Latitude ${train.coordinate.latitude}, longitude ${train.coordinate.longitude}")
                         if (onOpenTrain != null) {
                             val reference = train.journeyReference()

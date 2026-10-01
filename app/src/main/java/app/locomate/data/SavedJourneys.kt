@@ -4,6 +4,7 @@ import android.content.Context
 import app.locomate.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
 
 /** Private, on-device journey summary; no PNR, seat, or precise location. */
 data class SavedJourney(
@@ -19,6 +20,10 @@ data class SavedJourney(
     val durationMinutes: Int,
     val preview: Boolean,
 ) {
+    /** The service origin date, not when this record was saved or a claim about travel completion. */
+    val originYear: Int? get() = if (preview || originDate?.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) != true) null
+        else runCatching { LocalDate.parse(originDate).year }.getOrNull()
+
     companion object {
         fun from(route: RoutePreview, plan: JourneyPlan = JourneyPlan.default(route)): SavedJourney {
             val validPlan = plan.takeIf { it.isValidFor(route) } ?: JourneyPlan.default(route)
@@ -43,6 +48,12 @@ data class SavedJourney(
         )
         }
     }
+}
+
+object PassportPeriods {
+    fun years(journeys: List<SavedJourney>): List<Int> = journeys.mapNotNull { it.originYear }.distinct().sortedDescending()
+    fun filter(journeys: List<SavedJourney>, year: Int?): List<SavedJourney> =
+        if (year == null) journeys else journeys.filter { it.originYear == year }
 }
 
 data class PassportMetrics(

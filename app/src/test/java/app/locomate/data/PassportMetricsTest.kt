@@ -33,6 +33,25 @@ class PassportMetricsTest {
         assertNull(metrics.knownScheduledHours)
     }
 
+    @Test fun yearFiltersUseServiceOriginYearAndKeepPreviewAndUndatedOnlyInAllTime() {
+        val current = saved("current", false, 400.0, 600)
+        val earlier = saved("earlier", false, 120.0, 180).copy(originDate = "2025-12-31")
+        val undated = saved("undated", false, 0.0, 0).copy(originDate = null)
+        val malformed = saved("invalid", false, 0.0, 0).copy(originDate = "2025-02-30")
+        val preview = saved("preview", true, 900.0, 1_200).copy(originDate = "2024-01-01")
+        val all = listOf(current, earlier, undated, malformed, preview)
+        assertEquals(listOf(2026, 2025), PassportPeriods.years(all))
+        assertEquals(all, PassportPeriods.filter(all, null))
+        assertEquals(listOf(earlier), PassportPeriods.filter(all, 2025))
+        assertTrue(PassportPeriods.filter(all, 2024).isEmpty())
+        val year = PassportMetrics.from(PassportPeriods.filter(all, 2025))
+        assertEquals(1, year.runCount)
+        assertEquals(120, year.knownDistanceKm)
+        assertEquals(3, year.knownScheduledHours)
+        assertEquals(0, year.previewCount)
+        assertEquals(520, PassportMetrics.from(all).knownDistanceKm)
+    }
+
     @Test fun selectedSegmentUsesOnlyKnownStationDistance() {
         val route = RoutePreview(
             trainNumber = "12137", name = "Punjab Mail", originCode = "A", originName = "A",
