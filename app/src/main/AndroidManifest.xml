@@ -10,6 +10,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Locomate"
         tools:targetApi="36">
+        <profileable android:shell="true" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

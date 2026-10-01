@@ -27,6 +27,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 GitHub Actions runs the unit tests and APK build for each pull request. The Android adaptive icon and themed monochrome icon use the same route-shaped L as iOS.
 
+The separate Macrobenchmark module measures ten cold launches and ten Search-sheet open/close interactions over the map. It builds a locally signed, non-debuggable app variant and captures startup and frame traces. Run it on an Android 12 or newer **physical device** with a stable refresh rate:
+
+```sh
+./gradlew :macrobenchmark:connectedBenchmarkAndroidTest
+```
+
+Results and Perfetto traces are copied under `macrobenchmark/build/outputs/connected_android_test_additional_output/`. CI compiles the benchmark but does not treat an emulator run as a performance pass. An emulator can validate the interaction path with `-Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.dryRunMode.enable=true -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR`; its timing cannot establish the 400ms cold-start or 120Hz targets.
+
 ## Rail data modes
 
 Debug builds open in an explicit historical route-preview mode unless a gateway URL is supplied. Preview packs never claim a live position or ETA. Release builds target the deployed SmartRail rail gateway by default. To override either build type, use a Gradle property:
@@ -47,4 +55,4 @@ Boarding and alighting stops can be selected for each preview route or dated run
 
 Dated journeys can be shared through Android's native share sheet or inserted into a calendar with scheduled departure and arrival times. Preview journeys can be shared with their preview label but cannot be added to a calendar.
 
-This repository is still under active implementation. Android notifications, background contribution, accessibility review, and performance profiling remain to be completed and verified.
+This repository is still under active implementation. Android notifications, background contribution, accessibility review, and physical-device performance profiling remain to be completed and verified.

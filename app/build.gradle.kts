@@ -29,6 +29,11 @@ android {
                 ?: "https://rail-intelligence-gateway.rail-intelligence-gateway.workers.dev"
             buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
         }
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     compileOptions {
@@ -58,6 +63,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("org.maplibre.gl:android-sdk-opengl:13.5.2")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

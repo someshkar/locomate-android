@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Locomate"
 include(":app")
+include(":macrobenchmark")
