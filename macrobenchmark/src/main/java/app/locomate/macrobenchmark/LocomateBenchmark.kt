@@ -39,7 +39,7 @@ class LocomateBenchmark {
     }
 
     @Test
-    fun searchSheetOverMap() = benchmark.measureRepeated(
+    fun searchPageOverMap() = benchmark.measureRepeated(
         packageName = PACKAGE_NAME,
         metrics = listOf(FrameTimingMetric()),
         compilationMode = CompilationMode.DEFAULT,
@@ -57,12 +57,13 @@ class LocomateBenchmark {
         val search = device.wait(Until.findObject(By.desc("Search trains")), 5_000)
         assertNotNull("Search control was not visible", search)
         search.click()
-        val close = device.wait(Until.findObject(By.desc("Close search")), 5_000)
-        assertNotNull("Search sheet did not open", close)
+        assertNotNull("Search page did not open", device.wait(Until.findObject(By.text("Train name or number")), 5_000))
         Thread.sleep(600) // Include the complete opening transition in the frame trace.
-        close.click()
+        val journey = device.wait(Until.findObject(By.desc("Journeys")), 5_000)
+        assertNotNull("Journey navigation was not visible", journey)
+        journey.click()
         Thread.sleep(600) // Include the complete closing transition.
-        assertNotNull("Search sheet did not close", device.wait(Until.findObject(By.desc("Search trains")), 5_000))
+        assertTrue("Search page did not close", device.wait(Until.gone(By.text("Train name or number")), 5_000))
     }
 
     /** Network loading is setup; the trace covers actual sheet drags and content scrolling. */

@@ -13,6 +13,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.material3.Text
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.test.platform.app.InstrumentationRegistry
+import android.graphics.Bitmap
+import java.io.File
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.locomate.data.RailGateway
 import app.locomate.data.SavedJourney
@@ -32,12 +42,71 @@ import org.junit.runner.RunWith
 class CompletionActionsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun searchPageKeepsNavigationAboveKeyboardAndOpensTheSelectedDate() {
+        SearchGateway().use { server ->
+            val gateway = RailGateway(compose.activity, server.url)
+            var open by mutableStateOf(true)
+            var tab by mutableStateOf(Tab.Passport)
+            var selected: Pair<String, String>? = null
+            compose.setContent { LocomateTheme {
+                NavigationScaffold(tab, { tab = it; open = false }, { open = true }, searchActive = open) { inset ->
+                    if (open) SearchScreen(emptyList(), gateway, {}, { train, date ->
+                        selected = train.number to date; open = false
+                    }, bottomInset = inset)
+                    else Text("Returned to $tab")
+                }
+            } }
+            compose.onNodeWithContentDescription("Search trains").assertIsDisplayed().assertIsSelected()
+            screenshot("search-normal")
+            val field = compose.onNodeWithText("Train name or number").performScrollTo()
+            field.performClick().performTextInput("12951")
+            compose.waitUntil(5_000) { keyboardHeight() > 0 }
+            for (label in listOf("Journeys", "Explore", "Passport", "Search trains")) {
+                val dock = compose.onNodeWithContentDescription(label).assertIsDisplayed()
+                assertTrue("Navigation is covered by keyboard", dock.fetchSemanticsNode().boundsInRoot.bottom
+                    <= compose.activity.window.decorView.height - keyboardHeight())
+            }
+            screenshot("search-keyboard")
+            field.performImeAction()
+            compose.waitUntil(5_000) { keyboardHeight() == 0 }
+            val dateField = compose.onNodeWithText("Origin date · India time").performScrollTo()
+            dateField.performTextReplacement("2026-09-30")
+            dateField.performImeAction()
+            compose.waitUntil(5_000) { keyboardHeight() == 0 }
+            awaitText("12951 · First Express")
+            val result = compose.onNodeWithText("12951 · First Express").performScrollTo().assertIsDisplayed()
+            assertTrue("Result overlaps navigation", result.fetchSemanticsNode().boundsInRoot.bottom
+                < compose.onNodeWithContentDescription("Search trains").fetchSemanticsNode().boundsInRoot.top)
+            screenshot("search-result")
+            result.performClick()
+            compose.runOnIdle { assertEquals("12951" to "2026-09-30", selected) }
+            compose.onNodeWithText("Returned to Passport").assertExists()
+            compose.onNodeWithContentDescription("Search trains").performClick()
+            compose.onNodeWithContentDescription("Explore").performClick().assertIsSelected()
+            compose.onNodeWithText("Returned to Explore").assertExists()
+            compose.onNodeWithText("Train name or number").assertDoesNotExist()
+        }
+    }
+
+    private fun keyboardHeight(): Int = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+        ?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        val file = File(compose.activity.getExternalFilesDir(null), "search-page/$name.png")
+        file.parentFile?.mkdirs()
+        file.outputStream().use {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                .compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+
     @Test fun replacingAndClearingSearchRemovesOldActionsAndCanceledLoading() {
         SearchGateway().use { server ->
             val gateway = RailGateway(compose.activity, server.url)
             var selected: String? = null
             compose.setContent { LocomateTheme {
-                SearchSheet(emptyList(), gateway, {}, {}, { train, _ -> selected = train.number })
+                SearchScreen(emptyList(), gateway, {}, { train, _ -> selected = train.number })
             } }
             enterQuery("12951")
             awaitText("12951 · First Express")

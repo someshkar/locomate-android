@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.tryPerformAccessibilityChecks
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -109,12 +110,37 @@ class CoreAccessibilityTest {
 
     @Test fun searchKeepsItsFieldLabelAfterTyping() {
         val routes = PreviewRoutes.load(compose.activity)
+        val train = routes.first { it.trainNumber == "12951" }
         val gateway = RailGateway(compose.activity, "")
-        compose.setContent { AuditTheme { SearchSheet(routes, gateway, {}, {}, { _, _ -> }) } }
+        var selected: String? = null
+        compose.setContent { AuditTheme {
+            NavigationScaffold(Tab.Passport, {}, {}, searchActive = true) { inset ->
+                SearchScreen(routes, gateway, { selected = it }, { _, _ -> }, bottomInset = inset)
+            }
+        } }
         compose.enableAccessibilityChecks()
-        compose.onNodeWithText("Train name or number").performScrollTo().performTextInput(routes.first().trainNumber)
+        val field = compose.onNodeWithText("Train name or number").performScrollTo()
+        field.performTextInput(train.trainNumber)
         compose.onNodeWithText("Train name or number").assertIsDisplayed().tryPerformAccessibilityChecks()
+        for (label in listOf("Journeys", "Explore", "Passport", "Search trains")) {
+            compose.onNodeWithContentDescription(label).assertIsDisplayed().assertHasClickAction()
+        }
+        compose.onNodeWithContentDescription("Search trains").assertIsSelected()
+        saveScreenshot("search-200")
         assertVisibleTextFits()
+        field.performImeAction()
+        val result = compose.onNodeWithText("${train.trainNumber} · ${train.name}", useUnmergedTree = true)
+            .performScrollTo().assertIsDisplayed().tryPerformAccessibilityChecks()
+        val layouts = mutableListOf<TextLayoutResult>()
+        result.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue("Every line of the full result must be in the reading viewport",
+            layouts.single().multiParagraph.height <= result.fetchSemanticsNode().boundsInRoot.height + 1)
+        assertTrue("Result name overlaps navigation", result.fetchSemanticsNode().boundsInRoot.bottom
+            < compose.onNodeWithContentDescription("Search trains").fetchSemanticsNode().boundsInRoot.top)
+        saveScreenshot("search-full-result-200")
+        assertVisibleTextFits()
+        result.performClick()
+        compose.runOnIdle { assertEquals("12951", selected) }
     }
 
     @Test fun boardingAndAlightingChoicesExposeSelection() {

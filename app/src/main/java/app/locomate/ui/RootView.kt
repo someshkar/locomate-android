@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -470,8 +471,25 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
         else tab = Tab.Journeys
     }
 
-    NavigationScaffold(tab = tab, onTab = { tab = it; settingsOpen = false }, onSearch = { openSearch() }) { dockInset ->
-        Crossfade(targetState = tab, label = "primary tab") { current ->
+    NavigationScaffold(tab = tab, onTab = { tab = it; searchOpen = false; settingsOpen = false },
+        onSearch = { openSearch() }, searchActive = searchOpen) { dockInset ->
+        if (searchOpen) {
+            SearchScreen(
+                routes = routes,
+                bottomInset = dockInset,
+                gateway = gateway,
+                onSelect = { number ->
+                    selectionEpoch++
+                    stopStatusCardUnless(null)
+                    selectedNumber = number
+                    searchOpen = false
+                    tab = Tab.Journeys
+                },
+                onSelectLive = { train: TrainSearchResult, date: String ->
+                    JourneyAlertLink.fromRunId("${train.number}:$date")?.let(::openDatedJourney)
+                },
+            )
+        } else Crossfade(targetState = tab, label = "primary tab") { current ->
             when (current) {
                 Tab.Journeys -> JourneyScreen(
                     route = selectedRoute,
@@ -759,23 +777,6 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
         }
     }
 
-    if (searchOpen) {
-        SearchSheet(
-            routes = routes,
-            gateway = gateway,
-            onClose = { searchOpen = false },
-            onSelect = { number ->
-                selectionEpoch++
-                stopStatusCardUnless(null)
-                selectedNumber = number
-                searchOpen = false
-                tab = Tab.Journeys
-            },
-            onSelectLive = { train: TrainSearchResult, date: String ->
-                JourneyAlertLink.fromRunId("${train.number}:$date")?.let(::openDatedJourney)
-            },
-        )
-    }
     if (editingJourney && selectedRoute != null && selectedPlan != null) {
         JourneySetupDialog(selectedRoute, selectedPlan,
             onDismiss = { editingJourney = false },
@@ -815,13 +816,13 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
 /** Shares the actual dock footprint (including system inset and outer padding) with map cards. */
 @Composable
 internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit,
-                                content: @Composable (Dp) -> Unit) {
+                                searchActive: Boolean = false, content: @Composable (Dp) -> Unit) {
     var dockHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val dockInset = maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().then(if (searchActive) Modifier.imePadding() else Modifier)) {
         content(dockInset)
-        CapsuleNavBar(tab, onTab, onSearch,
+        CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
             modifier = Modifier.align(Alignment.BottomCenter)
                 .onSizeChanged { dockHeightPx = it.height }
                 .navigationBarsPadding()
@@ -830,7 +831,7 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
 }
 
 @Composable
-fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier) {
+fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier, searchActive: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     val lens = Brush.verticalGradient(listOf(LM.DockTop, LM.DockBottom))
     Row(modifier.widthIn(max = 330.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -846,9 +847,9 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
                     haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
                     onTab(it)
                 }
-                NavItem(Tab.Journeys, tab, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
-                NavItem(Tab.Explore, tab, "Explore", Icons.Outlined.Public, selectTab, Modifier.weight(1f))
-                NavItem(Tab.Passport, tab, "Passport", Icons.Outlined.ContactPage, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", Icons.Outlined.Public, selectTab, Modifier.weight(1f))
+                NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", Icons.Outlined.ContactPage, selectTab, Modifier.weight(1f))
             }
         }
         Spacer(Modifier.width(14.dp))
@@ -858,7 +859,7 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             shape = CircleShape,
             shadowElevation = 20.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-            modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains" }
+            modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
         ) {
             Box(Modifier.background(lens), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
@@ -870,7 +871,7 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
 @Composable
 private fun NavItem(
     item: Tab,
-    selected: Tab,
+    selected: Tab?,
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onTab: (Tab) -> Unit,
