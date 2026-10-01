@@ -181,9 +181,8 @@ class CommunityQueue(context: Context, baseUrl: String = BuildConfig.RAIL_API_UR
     }
 
     @Synchronized fun append(observation: CommunityObservation) {
-        val retained = pendingObservations().filterNot {
-            it.runId == observation.runId && it.timestamp == observation.timestamp
-        }
+        val retained = pendingObservations()
+        if (retained.any { it.runId == observation.runId && it.timestamp == observation.timestamp }) return
         write(observations, JSONArray().also { array ->
             (retained + observation).forEach { array.put(it.toJson()) }
         })

@@ -38,6 +38,7 @@ class CommunityContributionTest {
             1_900_000, 7_280_000, 80.0, 12.0, 0.25, 4.0)
         try {
             CommunityQueue(context, one).append(observation)
+            CommunityQueue(context, one).append(observation.copy(speedKph = 120.0))
             assertEquals(observation, CommunityQueue(context, one).pendingObservations().single())
             assertTrue(CommunityQueue(context, two).pendingObservations().isEmpty())
             val withdrawal = CommunityConsent.evidence(false)
