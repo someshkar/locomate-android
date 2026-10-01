@@ -2,6 +2,7 @@
 // Twin of the iOS app: same design system, same animations, same four screens.
 package app.locomate
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -10,6 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.metrics.performance.JankStats
 import androidx.metrics.performance.FrameDataApi31
@@ -18,13 +22,14 @@ import app.locomate.ui.theme.LocomateTheme
 
 class MainActivity : ComponentActivity() {
     private var jankStats: JankStats? = null
+    private var launchRevision by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             LocomateTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    RootView()
+                    RootView(launchRevision)
                 }
             }
         }
@@ -40,6 +45,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        launchRevision++
     }
 
     override fun onResume() {

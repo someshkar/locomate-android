@@ -66,4 +66,6 @@ Boarding and alighting stops can be selected for each preview route or dated run
 
 Dated journeys can be shared through Android's native share sheet or inserted into a calendar with scheduled departure and arrival times. Preview journeys can be shared with their preview label but cannot be added to a calendar.
 
-This repository is still under active implementation. Android notifications, background contribution, accessibility review, and physical-device performance profiling remain to be completed and verified.
+The opt-in **Status card** posts a quiet Android notification for one dated production run. Android asks for notification permission when the traveller taps it. The card refreshes when the app fetches new run data, opens the run after an app restart, and stops when the traveller turns it off, changes runs, or the run becomes stale. Its saved run reference is scoped to the gateway origin and stays on this device. Scheduled arrivals are labeled as scheduled; the card does not claim a live ETA when none exists.
+
+This repository is still under active implementation. Server-sent background notifications, background contribution, accessibility review, and physical-device performance profiling remain to be completed and verified.

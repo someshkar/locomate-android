@@ -1,8 +1,13 @@
 package app.locomate.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.CalendarContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -57,6 +62,7 @@ import app.locomate.data.PreviewRoutes
 import app.locomate.BuildConfig
 import app.locomate.data.JourneyPlan
 import app.locomate.data.JourneyPlanStore
+import app.locomate.data.JourneyStatusNotification
 import app.locomate.data.RailGateway
 import app.locomate.data.RoutePreview
 import app.locomate.data.SavedJourney
@@ -72,13 +78,14 @@ import kotlinx.coroutines.CancellationException
 enum class Tab { Journeys, Explore, Passport }
 
 @Composable
-fun RootView() {
+fun RootView(launchRevision: Int = 0) {
     val context = LocalContext.current
     val view = LocalView.current
     val haptics = LocalHapticFeedback.current
     val passport = remember { SavedJourneyStore(context) }
     val planStore = remember { JourneyPlanStore(context) }
     val gateway = remember { RailGateway(context) }
+    val statusCard = remember { JourneyStatusNotification(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val routes = remember(gateway.configured) {
         if (gateway.configured) emptyList() else PreviewRoutes.load(context)
@@ -88,6 +95,9 @@ fun RootView() {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var selectedNumber by rememberSaveable { mutableStateOf("12951") }
     var liveRoute by remember { mutableStateOf<RoutePreview?>(null) }
+    var statusCardRunId by remember { mutableStateOf(statusCard.activeRun()?.runId) }
+    var pendingStatusRoute by remember { mutableStateOf<RoutePreview?>(null) }
+    var selectionEpoch by remember { mutableIntStateOf(0) }
     var selectedPreview by remember { mutableStateOf<RoutePreview?>(null) }
     var journeyMessage by remember { mutableStateOf<String?>(null) }
     var passportNotice by remember { mutableStateOf<String?>(null) }
@@ -105,6 +115,17 @@ fun RootView() {
     }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val route = pendingStatusRoute
+        pendingStatusRoute = null
+        if (route?.runId != selectedRoute?.runId) return@rememberLauncherForActivityResult
+        if (granted && route != null && statusCard.show(route)) {
+            statusCardRunId = route.runId
+            journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
+        } else {
+            journeyMessage = "Allow notifications in Android settings to show the status card."
+        }
+    }
     val selectedPlan = remember(selectedRoute?.runId, selectedRoute?.trainNumber,
         selectedRoute?.runDate, selectedRoute?.isPreview, planVersion) {
         selectedRoute?.let(planStore::load)
@@ -118,6 +139,57 @@ fun RootView() {
     fun openSearch() {
         haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
         searchOpen = true
+    }
+
+    fun stopStatusCardUnless(runId: String?) {
+        if (statusCardRunId != null && statusCardRunId != runId) {
+            statusCard.cancel()
+            statusCardRunId = null
+        }
+    }
+
+    LaunchedEffect(gateway, launchRevision) {
+        if (!gateway.configured) return@LaunchedEffect
+        val active = statusCard.activeRun() ?: return@LaunchedEffect
+        statusCardRunId = active.runId
+        if (liveRoute?.runId == active.runId) {
+            tab = Tab.Journeys
+            return@LaunchedEffect
+        }
+        val epoch = selectionEpoch
+        try {
+            val restored = gateway.journey(active.trainNumber, active.originDate)
+            if (selectionEpoch == epoch && statusCard.activeRun()?.runId == active.runId) {
+                liveRoute = restored
+                selectedPreview = null
+                tab = Tab.Journeys
+                journeyMessage = null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (selectionEpoch == epoch) {
+                statusCard.cancel()
+                statusCardRunId = null
+                journeyMessage = "The saved status card could not refresh. Select the train again."
+            }
+        }
+    }
+
+    LaunchedEffect(selectedRoute?.runId) {
+        if (selectedRoute != null && statusCardRunId != null && selectedRoute.runId != statusCardRunId) {
+            statusCard.cancel()
+            statusCardRunId = null
+        }
+    }
+
+    LaunchedEffect(liveRoute, statusCardRunId) {
+        val current = liveRoute
+        if (current != null && current.runId == statusCardRunId && !statusCard.show(current)) {
+            statusCard.cancel()
+            statusCardRunId = null
+            journeyMessage = "The status card stopped because this run is stale or notifications are unavailable."
+        }
     }
 
     LaunchedEffect(gateway, liveRoute?.runId) {
@@ -160,6 +232,31 @@ fun RootView() {
                     productionMode = gateway.configured && selectedPreview == null,
                     saved = selectedRoute?.let { SavedJourney.from(it, selectedPlan ?: JourneyPlan.default(it)).key in savedJourneys.map(SavedJourney::key) } ?: false,
                     message = journeyMessage,
+                    statusCardEnabled = selectedRoute?.runId != null && selectedRoute.runId == statusCardRunId,
+                    onStatusCard = {
+                        val route = selectedRoute
+                        when {
+                            route == null || route.isPreview || route.runId == null || route.runDate == null ->
+                                journeyMessage = "A dated production journey is required for a status card."
+                            route.runId == statusCardRunId -> {
+                                statusCard.cancel()
+                                statusCardRunId = null
+                                journeyMessage = "Status card is off for ${route.trainNumber}."
+                            }
+                            route.statusLabel.startsWith("STALE") ->
+                                journeyMessage = "A fresh journey is required for a status card."
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED -> {
+                                pendingStatusRoute = route
+                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                            statusCard.show(route) -> {
+                                statusCardRunId = route.runId
+                                journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
+                            }
+                            else -> journeyMessage = "Enable notifications in Android settings to show the status card."
+                        }
+                    },
                     onEdit = { editingJourney = true },
                     onSearch = { openSearch() },
                     onCalendar = {
@@ -228,9 +325,12 @@ fun RootView() {
                         haptics.performHapticFeedback(HapticFeedbackType.ToggleOff)
                     },
                     onOpen = { saved ->
+                        selectionEpoch++
+                        val selectedEpoch = selectionEpoch
                         if (!saved.preview && !gateway.configured) {
                             passportNotice = "A rail gateway is needed to reopen this dated run. Your saved summary is still on this device."
                         } else if (saved.preview) {
+                            stopStatusCardUnless(null)
                             val previewRoute = routes.firstOrNull { it.trainNumber == saved.trainNumber }
                             if (previewRoute == null) {
                                 passportNotice = "This historical route pack is no longer available. Your saved summary remains on this device."
@@ -244,6 +344,7 @@ fun RootView() {
                                 selectedPreview = previewRoute
                             }
                         } else if (!saved.preview && gateway.configured && saved.originDate != null) {
+                            stopStatusCardUnless("run:${saved.trainNumber}:${saved.originDate}")
                             passportNotice = null
                             tab = Tab.Journeys
                             selectedPreview = null
@@ -252,13 +353,18 @@ fun RootView() {
                             scope.launch {
                                 try {
                                     val loaded = gateway.journey(saved.trainNumber, saved.originDate)
+                                    if (selectionEpoch != selectedEpoch) return@launch
                                     val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
                                     if (savedPlan.isValidFor(loaded)) planStore.save(loaded, savedPlan)
                                     planVersion++
                                     liveRoute = loaded
                                     journeyMessage = null
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
                                 } catch (error: Exception) {
-                                    journeyMessage = error.message ?: "This saved run is unavailable."
+                                    if (selectionEpoch == selectedEpoch) {
+                                        journeyMessage = error.message ?: "This saved run is unavailable."
+                                    }
                                 }
                             }
                         }
@@ -282,11 +388,16 @@ fun RootView() {
             gateway = gateway,
             onClose = { searchOpen = false },
             onSelect = { number ->
+                selectionEpoch++
+                stopStatusCardUnless(null)
                 selectedNumber = number
                 searchOpen = false
                 tab = Tab.Journeys
             },
             onSelectLive = { train: TrainSearchResult, date: String ->
+                selectionEpoch++
+                val selectedEpoch = selectionEpoch
+                stopStatusCardUnless("run:${train.number}:$date")
                 searchOpen = false
                 tab = Tab.Journeys
                 selectedPreview = null
@@ -294,12 +405,17 @@ fun RootView() {
                 journeyMessage = "Loading ${train.number} for $date…"
                 scope.launch {
                     try {
-                        liveRoute = gateway.journey(train.number, date)
-                        journeyMessage = null
+                        val loaded = gateway.journey(train.number, date)
+                        if (selectionEpoch == selectedEpoch) {
+                            liveRoute = loaded
+                            journeyMessage = null
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
-                        journeyMessage = error.message ?: "This train run is unavailable."
+                        if (selectionEpoch == selectedEpoch) {
+                            journeyMessage = error.message ?: "This train run is unavailable."
+                        }
                     }
                 }
             },

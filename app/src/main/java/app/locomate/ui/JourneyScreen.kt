@@ -30,6 +30,8 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
@@ -69,9 +71,9 @@ import kotlin.math.roundToInt
 
 @Composable
 fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolean, productionMode: Boolean = false,
-                  message: String? = null, onSave: () -> Unit,
+                  message: String? = null, statusCardEnabled: Boolean = false, onSave: () -> Unit,
                   onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
-                  onSearch: () -> Unit = {}) {
+                  onSearch: () -> Unit = {}, onStatusCard: () -> Unit = {}) {
     val haptics = LocalHapticFeedback.current
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
     val boarding = route?.calls?.firstOrNull { it.code == segment?.boardingCode }
@@ -261,6 +263,19 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Spacer(Modifier.height(18.dp))
                     if (route != null) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Surface(onClick = onStatusCard,
+                                color = if (statusCardEnabled) Color(0xFF173346) else Color(0xFF242832),
+                                shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f).semantics {
+                                    contentDescription = if (statusCardEnabled) "Turn status card off" else "Turn status card on"
+                                }) {
+                                Row(Modifier.padding(horizontal = 8.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(if (statusCardEnabled) Icons.Outlined.NotificationsActive else Icons.Outlined.NotificationsNone,
+                                        contentDescription = null, tint = LM.Accent, modifier = Modifier.size(18.dp))
+                                    Text("Status card", color = LM.Ink, fontSize = 12.sp, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 5.dp))
+                                }
+                            }
                             if (!route.isPreview && calendarStart != null && calendarEnd != null) {
                                 Surface(onClick = onCalendar,
                                     color = Color(0xFF242832), shape = RoundedCornerShape(18.dp),
