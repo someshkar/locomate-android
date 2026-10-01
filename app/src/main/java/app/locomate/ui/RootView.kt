@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.PreviewRoutes
+import app.locomate.BuildConfig
 import app.locomate.data.JourneyPlan
 import app.locomate.data.JourneyPlanStore
 import app.locomate.data.RailGateway
@@ -90,6 +91,7 @@ fun RootView() {
     var planVersion by remember { mutableIntStateOf(0) }
     var savedJourneys by remember { mutableStateOf(passport.load()) }
     LaunchedEffect(tab, searchOpen, settingsOpen, view) {
+        if (!BuildConfig.DEBUG) return@LaunchedEffect
         val screen = when {
             searchOpen -> "Search"
             settingsOpen -> "Settings"
