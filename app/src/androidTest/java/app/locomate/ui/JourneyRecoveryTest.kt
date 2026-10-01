@@ -2,6 +2,8 @@ package app.locomate.ui
 
 import android.Manifest
 import android.net.Uri
+import android.graphics.Bitmap
+import java.io.File
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.remember
@@ -10,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollToNode
@@ -45,6 +48,47 @@ import org.junit.runner.RunWith
 class JourneyRecoveryTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var launchRevision by mutableIntStateOf(0)
+
+    @Test fun recentTrainRestoresAfterRestartAndOpensTheChosenDateWithoutSearchingAgain() {
+        RecoveryGateway().use { server ->
+            val current = CurrentJourneyStore(compose.activity, server.url)
+            val recent = app.locomate.data.RecentTrainStore(compose.activity, server.url)
+            current.clear(); recent.clear()
+            try {
+                installRoot(server.url)
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                compose.onNodeWithText("Train name or number").performTextInput("12951")
+                chooseOriginDate(compose, "2026-10-01")
+                awaitText("Recovery Express")
+                compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
+                awaitText("SCHEDULED · NO LIVE ETA")
+                compose.activityRule.scenario.recreate()
+                installRoot(server.url)
+                awaitText("SCHEDULED · NO LIVE ETA")
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                chooseOriginDate(compose, "2019-02-15")
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(androidx.compose.ui.test.hasText("Recovery Express"))
+                val row = compose.onNodeWithText("Recovery Express").performScrollTo().assertIsDisplayed()
+                assertTrue(row.fetchSemanticsNode().boundsInRoot.bottom <=
+                    compose.onNodeWithContentDescription("Search trains").fetchSemanticsNode().boundsInRoot.top)
+                captureRecent("recent-normal")
+                row.performClick()
+                awaitText("SCHEDULED · NO LIVE ETA")
+                assertEquals(JourneyAlertLink("12951", "2019-02-15"), current.read())
+                assertTrue(server.paths.contains("/v1/runs/12951/2019-02-15"))
+                assertEquals(1, server.paths.count { it == "/v1/trains/search" })
+                assertEquals(listOf("12951"), recent.load().map { it.number })
+                assertNoConsent()
+                compose.onNodeWithContentDescription("Search trains").performClick()
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(
+                    androidx.compose.ui.test.hasContentDescription("Clear recent trains"))
+                compose.onNodeWithContentDescription("Clear recent trains").performClick()
+                assertTrue(recent.load().isEmpty())
+                compose.onNodeWithText("Recovery Express").assertDoesNotExist()
+                captureRecent("recent-cleared-normal")
+            } finally { current.clear(); recent.clear() }
+        }
+    }
 
     @Test fun selectedDatedRunRestoresAfterActivityRecreationWhenGatewayIsOffline() {
         RecoveryGateway().use { server ->
@@ -205,6 +249,16 @@ class JourneyRecoveryTest {
                 val gateway = remember { RailGateway(activity, url) }
                 LocomateTheme { RootView(launchRevision = launchRevision, railGateway = gateway) }
             }
+        }
+    }
+
+    private fun captureRecent(name: String) {
+        compose.waitForIdle()
+        val file = File(compose.activity.getExternalFilesDir(null), "recent-trains/$name.png")
+        file.parentFile?.mkdirs()
+        file.outputStream().use {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                .compress(Bitmap.CompressFormat.PNG, 100, it)
         }
     }
 

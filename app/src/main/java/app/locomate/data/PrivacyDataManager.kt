@@ -45,6 +45,7 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
 
     /** A failed or partial deletion stays paused until the user retries and cleanup completes. */
     suspend fun deleteAll(): Boolean {
+        RecentTrainStore.beginPrivacyDeletion()
         CommunityLocationService.stop(appContext)
         withContext(Dispatchers.IO) { StatusPushWork.beginPrivacyDeletion(appContext) }
         if (gateway.configured) gateway.deletePrivacyData()

@@ -132,6 +132,42 @@ class CoreAccessibilityTest {
         saveScreenshot("origin-selected-200")
     }
 
+    @Test fun actualRecentSelectionAndClearingRemainReadableAtTwoHundredPercentText() {
+        val store = app.locomate.data.RecentTrainStore(compose.activity, "")
+        assertTrue(store.clear())
+        val routes = PreviewRoutes.load(compose.activity)
+        val train = routes.first { it.trainNumber == "12951" }
+        var selections = 0
+        compose.setContent { AuditTheme {
+            val gateway = androidx.compose.runtime.remember { RailGateway(compose.activity, "") }
+            NavigationScaffold(Tab.Journeys, {}, {}, searchActive = true) { inset ->
+                SearchScreen(routes, gateway, { number -> assertEquals("12951", number); selections++ }, { _, _ -> }, inset)
+            }
+        } }
+        compose.enableAccessibilityChecks()
+        val field = compose.onNodeWithText("Train name or number")
+        field.performTextInput("12951")
+        field.performImeAction()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
+        compose.onNodeWithText(train.name).performScrollTo().performClick()
+        field.performScrollTo().performTextReplacement("")
+        field.performImeAction()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
+        compose.onNodeWithText(train.name).assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("search-recents-200")
+        compose.onNodeWithText(train.name).performClick()
+        compose.runOnIdle { assertEquals(2, selections) }
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(
+            androidx.compose.ui.test.hasContentDescription("Clear recent trains"))
+        compose.onNodeWithContentDescription("Clear recent trains").assertIsDisplayed().tryPerformAccessibilityChecks()
+        assertVisibleTextFits()
+        saveScreenshot("search-recents-clear-200")
+        compose.onNodeWithContentDescription("Clear recent trains").performClick()
+        compose.onNodeWithText(train.name).assertDoesNotExist()
+        assertTrue(store.load().isEmpty())
+    }
+
     @Test fun journeyDetailsCanBeExpandedWithoutDragging() {
         val route = PreviewRoutes.load(compose.activity).first()
         val glass = MapGlassController()

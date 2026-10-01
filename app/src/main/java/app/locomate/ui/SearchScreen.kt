@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +28,8 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,6 +38,7 @@ import app.locomate.ui.theme.PlexMono
 import app.locomate.data.RoutePreview
 import app.locomate.data.RailGateway
 import app.locomate.data.TrainSearchResult
+import app.locomate.data.RecentTrainStore
 import app.locomate.ui.theme.LM
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
@@ -58,6 +63,13 @@ fun SearchScreen(
 ) {
     val focus = LocalFocusManager.current
     val density = LocalDensity.current
+    val context = LocalContext.current
+    val recentStore = androidx.compose.runtime.remember(gateway) { RecentTrainStore(context, gateway.sourceUrl) }
+    var recentTrains by androidx.compose.runtime.remember(recentStore) { mutableStateOf(recentStore.load()) }
+    var recentNotice by androidx.compose.runtime.remember(recentStore) { mutableStateOf<String?>(null) }
+    val rememberTrain: (TrainSearchResult) -> Unit = { train ->
+        if (recentStore.record(train)) recentTrains = recentStore.load()
+    }
     val keyboardVisible = WindowInsets.ime.getBottom(density) > 0
     val attribution = androidx.compose.runtime.remember { MapAttributionController() }
     var query by rememberSaveable { mutableStateOf("") }
@@ -86,7 +98,7 @@ fun SearchScreen(
             searchState = SearchResultState(requestQuery, error = error.message ?: "Search unavailable.")
         }
     }
-    val results = routes.filter {
+    val results = if (requestQuery.length < 2) emptyList() else routes.filter {
         query.isBlank() || it.trainNumber.contains(query.trim()) || it.name.contains(query.trim(), ignoreCase = true)
     }
 
@@ -128,6 +140,37 @@ fun SearchScreen(
                     Spacer(Modifier.height(22.dp))
                 }
             }
+            if (requestQuery.isEmpty()) {
+                item("recents-heading") {
+                    val recentHeading: @Composable () -> Unit = {
+                        Text("RECENT TRAINS", color = LM.Ink3, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold,
+                            fontFamily = PlexMono, letterSpacing = 1.5.sp, modifier = Modifier.semantics { heading() })
+                    }
+                    val clear: @Composable () -> Unit = {
+                        if (recentTrains.isNotEmpty()) TextButton(onClick = {
+                            if (recentStore.clear()) { recentTrains = emptyList(); recentNotice = null }
+                            else recentNotice = "Couldn't clear recent trains. Try again."
+                        }, modifier = Modifier.semantics { contentDescription = "Clear recent trains" }) {
+                            Text("Clear", color = LM.Ink2, fontSize = 12.5.sp)
+                        }
+                    }
+                    if (density.fontScale >= 1.5f) Column { recentHeading(); clear() }
+                    else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { recentHeading(); clear() }
+                }
+                if (recentNotice != null) item("recents-notice") { Text(recentNotice!!, color = LM.Warn) }
+                if (recentTrains.isEmpty()) item("recents-empty") {
+                    Text("Trains you choose will appear here.", color = LM.Ink2, fontSize = 13.sp)
+                }
+                itemsIndexed(recentTrains, key = { _, train -> "recent:${train.number}" }) { index, train ->
+                    SearchResultRow(train.number, train.name, train.originCode, train.destinationCode,
+                        train.originName, train.destinationName, train.sourceLabel, train.distanceKm,
+                        showSeparator = index < recentTrains.lastIndex, onSelect = {
+                            rememberTrain(train)
+                            if (gateway.configured) onSelectLive(train, date) else onSelect(train.number)
+                        })
+                }
+            }
             if (searching) item("loading") { Text("Searching…", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp)) }
             if (searchError != null) item("error") {
                 Column {
@@ -140,7 +183,7 @@ fun SearchScreen(
                     Text("No matching trains found.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
                 }
             }
-            if (!gateway.configured && results.isEmpty()) {
+            if (!gateway.configured && requestQuery.length >= 2 && results.isEmpty()) {
                 item("empty") {
                     Text("No sample train matches this search.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
                 }
@@ -150,12 +193,17 @@ fun SearchScreen(
                     train.originName, train.destinationName, train.sourceLabel, train.distanceKm,
                     showSeparator = index < liveResults.lastIndex,
                     enabled = !searching && runCatching { LocalDate.parse(date) }.isSuccess,
-                    onSelect = { if (query.trim() == requestQuery) onSelectLive(train, date) })
+                    onSelect = { if (query.trim() == requestQuery) { rememberTrain(train); onSelectLive(train, date) } })
             }
             if (!gateway.configured) itemsIndexed(results, key = { index, train -> "${train.trainNumber}:$index" }) { index, train ->
                 SearchResultRow(train.trainNumber, train.name, train.originCode, train.destinationCode,
                     train.originName, train.destinationName, "Historical route pack", train.distanceKm,
-                    showSeparator = index < results.lastIndex, onSelect = { onSelect(train.trainNumber) })
+                    showSeparator = index < results.lastIndex, onSelect = {
+                        rememberTrain(TrainSearchResult(train.trainNumber, train.name, train.originCode, train.originName,
+                            train.destinationCode, train.destinationName, live = false,
+                            sourceLabel = "Historical route pack", distanceKm = train.distanceKm))
+                        onSelect(train.trainNumber)
+                    })
             }
             item("attribution") {
                 Column {
