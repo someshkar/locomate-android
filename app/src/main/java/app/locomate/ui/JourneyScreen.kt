@@ -185,6 +185,9 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         }
                         Spacer(Modifier.height(160.dp))
                     } else {
+                    Surface(color = LM.Elevated, shape = RoundedCornerShape(LM.RadiusCard),
+                        modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (route == null) "No journey selected" else "${route.trainNumber} · ${route.displayName}",
                             color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -216,7 +219,9 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             else if (alighting?.forecastP50 != null || route?.statusLabel?.startsWith("PREDICTED") == true) Color(0xFFFFB84D)
                             else LM.Ink)
                     }
-                    Spacer(Modifier.height(21.dp))
+                    }
+                    }
+                    Spacer(Modifier.height(18.dp))
                     if (route != null && route.calls.size > 1) {
                         Surface(onClick = onEdit, color = Color(0xFF252830),
                             shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
