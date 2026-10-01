@@ -19,19 +19,28 @@ data class SavedJourney(
     val preview: Boolean,
 ) {
     companion object {
-        fun from(route: RoutePreview): SavedJourney = SavedJourney(
-            key = if (route.isPreview) "preview:${route.trainNumber}" else "run:${route.trainNumber}:${route.runDate}",
+        fun from(route: RoutePreview, plan: JourneyPlan = JourneyPlan.default(route)): SavedJourney {
+            val validPlan = plan.takeIf { it.isValidFor(route) } ?: JourneyPlan.default(route)
+            val board = route.calls.firstOrNull { it.code == validPlan.boardingCode }
+            val leave = route.calls.firstOrNull { it.code == validPlan.alightingCode }
+            val wholeRun = board == route.calls.firstOrNull() && leave == route.calls.lastOrNull()
+            val baseKey = if (route.isPreview) "preview:${route.trainNumber}" else "run:${route.trainNumber}:${route.runDate}"
+            val distance = if (wholeRun) route.distanceKm else if (board?.distanceKm != null && leave?.distanceKm != null)
+                (leave.distanceKm - board.distanceKm).coerceAtLeast(0.0) else 0.0
+            return SavedJourney(
+            key = if (wholeRun) baseKey else "$baseKey:${validPlan.boardingCode}:${validPlan.alightingCode}",
             trainNumber = route.trainNumber,
             trainName = route.displayName,
-            originCode = route.originCode,
-            originName = route.originName,
-            destinationCode = route.destinationCode,
-            destinationName = route.destinationName,
+            originCode = board?.code ?: route.originCode,
+            originName = board?.name ?: route.originName,
+            destinationCode = leave?.code ?: route.destinationCode,
+            destinationName = leave?.name ?: route.destinationName,
             originDate = route.runDate,
-            distanceKm = route.distanceKm,
-            durationMinutes = route.durationMinutes,
+            distanceKm = distance,
+            durationMinutes = if (wholeRun) route.durationMinutes else 0,
             preview = route.isPreview,
         )
+        }
     }
 }
 

@@ -139,6 +139,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         val upper = prediction.stringOrNull("upperBound")
         val freshness = provenance?.stringOrNull("freshness") ?: "scheduled"
         val observed = provenance?.stringOrNull("observedAt")
+        val position = journey.optJSONObject("position")
         val freshObservation = freshness == "live" && observed != null && runCatching {
             Instant.now().epochSecond - Instant.parse(observed).epochSecond in 0..600
         }.getOrDefault(false)
@@ -189,6 +190,9 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                     forecastSource = forecast?.stringOrNull("source"),
                     fallbackReason = forecast?.stringOrNull("fallbackReason"),
                     platform = stop.stringOrNull("platform"),
+                    distanceKm = if (stop.isNull("distanceKm")) null else stop.optDouble("distanceKm"),
+                    scheduledArrivalMillis = stop.stringOrNull("scheduledArrival")?.let(::instantMillis),
+                    scheduledDepartureMillis = stop.stringOrNull("scheduledDeparture")?.let(::instantMillis),
                 )
             },
             distanceKm = journey.optDouble("distanceKm", 0.0),
@@ -202,6 +206,10 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 "${if (cachedAt != null) "Last forecast · " else ""}P10 ${railTime(lower)} · P50 ${railTime(expected)} · P90 ${railTime(upper)}" else null,
             departureInstantMillis = instantMillis(journey.getString("departureTime")),
             arrivalInstantMillis = instantMillis(journey.getString("scheduledArrival")),
+            positionProgress = if (freshObservation || cachedAt != null)
+                position?.optDouble("progress")?.takeIf { it.isFinite() && it in 0.0..1.0 } else null,
+            positionStatus = if (cachedAt != null) "Last known position · stale"
+                else if (freshObservation) "Observed position · $provider" else null,
         )
     }
 

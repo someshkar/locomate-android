@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -46,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.PreviewRoutes
+import app.locomate.data.JourneyPlan
+import app.locomate.data.JourneyPlanStore
 import app.locomate.data.RailGateway
 import app.locomate.data.RoutePreview
 import app.locomate.data.SavedJourney
@@ -63,6 +66,7 @@ enum class Tab { Journeys, Explore, Passport }
 fun RootView() {
     val context = LocalContext.current
     val passport = remember { SavedJourneyStore(context) }
+    val planStore = remember { JourneyPlanStore(context) }
     val gateway = remember { RailGateway(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val routes = remember { PreviewRoutes.load(context) }
@@ -74,9 +78,15 @@ fun RootView() {
     var selectedPreview by remember { mutableStateOf<RoutePreview?>(null) }
     var journeyMessage by remember { mutableStateOf<String?>(null) }
     var passportNotice by remember { mutableStateOf<String?>(null) }
+    var editingJourney by remember { mutableStateOf(false) }
+    var planVersion by remember { mutableIntStateOf(0) }
     var savedJourneys by remember { mutableStateOf(passport.load()) }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
+    val selectedPlan = remember(selectedRoute?.runId, selectedRoute?.trainNumber,
+        selectedRoute?.runDate, selectedRoute?.isPreview, planVersion) {
+        selectedRoute?.let(planStore::load)
+    }
 
     fun updateSaved(next: List<SavedJourney>) {
         savedJourneys = next
@@ -119,13 +129,19 @@ fun RootView() {
             when (current) {
                 Tab.Journeys -> JourneyScreen(
                     route = selectedRoute,
+                    plan = selectedPlan,
                     productionMode = gateway.configured && selectedPreview == null,
-                    saved = selectedRoute?.let { SavedJourney.from(it).key in savedJourneys.map(SavedJourney::key) } ?: false,
+                    saved = selectedRoute?.let { SavedJourney.from(it, selectedPlan ?: JourneyPlan.default(it)).key in savedJourneys.map(SavedJourney::key) } ?: false,
                     message = journeyMessage,
+                    onEdit = { editingJourney = true },
                     onCalendar = {
                         selectedRoute?.let { route ->
-                            val start = route.departureInstantMillis
-                            val end = route.arrivalInstantMillis
+                            val board = route.calls.firstOrNull { it.code == selectedPlan?.boardingCode }
+                            val leave = route.calls.firstOrNull { it.code == selectedPlan?.alightingCode }
+                            val fullRun = selectedPlan == null || selectedPlan == JourneyPlan.default(route)
+                            val start = if (fullRun) route.departureInstantMillis
+                                else board?.scheduledDepartureMillis ?: board?.scheduledArrivalMillis
+                            val end = if (fullRun) route.arrivalInstantMillis else leave?.scheduledArrivalMillis
                             if (!route.isPreview && start != null && end != null) {
                                 runCatching {
                                     context.startActivity(Intent(Intent.ACTION_INSERT).apply {
@@ -134,7 +150,7 @@ fun RootView() {
                                         putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end)
                                         putExtra(CalendarContract.Events.TITLE, "${route.trainNumber} · ${route.displayName}")
                                         putExtra(CalendarContract.Events.EVENT_LOCATION,
-                                            "${route.originName} → ${route.destinationName}")
+                                            "${board?.name ?: route.originName} → ${leave?.name ?: route.destinationName}")
                                         putExtra(CalendarContract.Events.DESCRIPTION,
                                             "Scheduled rail journey · ${route.statusLabel}. Check current railway information before travel.")
                                     })
@@ -144,7 +160,9 @@ fun RootView() {
                     },
                     onShare = {
                         selectedRoute?.let { route ->
-                            val text = "${route.trainNumber} · ${route.displayName}\n${route.routeLabel}\n${route.originCode} ${route.departure} → ${route.destinationCode} ${route.arrival}\n${route.statusLabel}. ${route.sourceDetail}"
+                            val board = route.calls.firstOrNull { it.code == selectedPlan?.boardingCode }
+                            val leave = route.calls.firstOrNull { it.code == selectedPlan?.alightingCode }
+                            val text = "${route.trainNumber} · ${route.displayName}\n${board?.name ?: route.originName} → ${leave?.name ?: route.destinationName}\n${route.statusLabel}. ${route.sourceDetail}"
                             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, text)
@@ -153,7 +171,7 @@ fun RootView() {
                     },
                     onSave = {
                         selectedRoute?.let { route ->
-                            val entry = SavedJourney.from(route)
+                            val entry = SavedJourney.from(route, selectedPlan ?: JourneyPlan.default(route))
                             updateSaved(if (savedJourneys.any { it.key == entry.key })
                                 savedJourneys.filterNot { it.key == entry.key }
                                 else savedJourneys + entry)
@@ -178,10 +196,18 @@ fun RootView() {
                         if (!saved.preview && !gateway.configured) {
                             passportNotice = "A rail gateway is needed to reopen this dated run. Your saved summary is still on this device."
                         } else if (saved.preview) {
-                            passportNotice = null
-                            tab = Tab.Journeys
-                            selectedNumber = saved.trainNumber
-                            selectedPreview = routes.firstOrNull { it.trainNumber == saved.trainNumber }
+                            val previewRoute = routes.firstOrNull { it.trainNumber == saved.trainNumber }
+                            if (previewRoute == null) {
+                                passportNotice = "This historical route pack is no longer available. Your saved summary remains on this device."
+                            } else {
+                                val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
+                                if (savedPlan.isValidFor(previewRoute)) planStore.save(previewRoute, savedPlan)
+                                planVersion++
+                                passportNotice = null
+                                tab = Tab.Journeys
+                                selectedNumber = saved.trainNumber
+                                selectedPreview = previewRoute
+                            }
                         } else if (!saved.preview && gateway.configured && saved.originDate != null) {
                             passportNotice = null
                             tab = Tab.Journeys
@@ -190,7 +216,11 @@ fun RootView() {
                             journeyMessage = "Loading ${saved.trainNumber} for ${saved.originDate}…"
                             scope.launch {
                                 try {
-                                    liveRoute = gateway.journey(saved.trainNumber, saved.originDate)
+                                    val loaded = gateway.journey(saved.trainNumber, saved.originDate)
+                                    val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
+                                    if (savedPlan.isValidFor(loaded)) planStore.save(loaded, savedPlan)
+                                    planVersion++
+                                    liveRoute = loaded
                                     journeyMessage = null
                                 } catch (error: Exception) {
                                     journeyMessage = error.message ?: "This saved run is unavailable."
@@ -239,6 +269,15 @@ fun RootView() {
                 }
             },
         )
+    }
+    if (editingJourney && selectedRoute != null && selectedPlan != null) {
+        JourneySetupDialog(selectedRoute, selectedPlan,
+            onDismiss = { editingJourney = false },
+            onSave = { next ->
+                planStore.save(selectedRoute, next)
+                planVersion++
+                editingJourney = false
+            })
     }
 }
 

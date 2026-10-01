@@ -20,6 +20,9 @@ data class RouteStop(
     val forecastSource: String? = null,
     val fallbackReason: String? = null,
     val platform: String? = null,
+    val distanceKm: Double? = null,
+    val scheduledArrivalMillis: Long? = null,
+    val scheduledDepartureMillis: Long? = null,
 )
 
 data class RoutePreview(
@@ -44,6 +47,8 @@ data class RoutePreview(
     val etaBand: String? = null,
     val departureInstantMillis: Long? = null,
     val arrivalInstantMillis: Long? = null,
+    val positionProgress: Double? = null,
+    val positionStatus: String? = null,
 ) {
     val displayName: String get() = if ("Rajdhani" in name && '-' in name) {
         "${name.substringBefore('-').removeSuffix(" Central")} Rajdhani"
@@ -89,6 +94,8 @@ object PreviewRoutes {
                 },
                 distanceKm = pack.optDouble("distanceKm", 0.0),
                 durationMinutes = pack.optInt("durationMinutes", 0),
+                positionProgress = 0.5,
+                positionStatus = "Historical route sample · not live",
             )
         }
     }.getOrElse { emptyList() }

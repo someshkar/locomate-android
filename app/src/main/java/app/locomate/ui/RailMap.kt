@@ -3,13 +3,20 @@ package app.locomate.ui
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -18,6 +25,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import app.locomate.data.RoutePreview
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkTrain
+import app.locomate.data.RailGeometry
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.Marker
 import org.maplibre.android.annotations.MarkerOptions
@@ -26,6 +34,7 @@ import org.maplibre.android.annotations.PolylineOptions
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.MapLibreMap
 
 /** Native map surface. The sample corridor is shown only in explicit preview mode. */
 @Composable
@@ -38,11 +47,17 @@ fun RailMap(
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
+    val currentRoute = rememberUpdatedState(route)
+    val currentNetworkTrains = rememberUpdatedState(networkTrains)
     val observedIcon = remember(context) { markerIcon(context, 0xFF37C982.toInt()) }
     val estimatedIcon = remember(context) { markerIcon(context, 0xFFFFB84D.toInt()) }
-    val mapView = remember(route?.trainNumber) {
+    val previewIcon = remember(context) { markerIcon(context, 0xFFBCA7FF.toInt()) }
+    var styleReady by remember(route?.trainNumber, route?.runDate) { mutableStateOf(false) }
+    val markerRefs = remember(route?.trainNumber, route?.runDate) { mutableListOf<Marker>() }
+    val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
         MapView(context).apply {
+            setBackgroundColor(android.graphics.Color.rgb(6, 7, 8))
             onCreate(null)
             getMapAsync { map ->
                 fun publishBounds() {
@@ -56,14 +71,17 @@ fun RailMap(
                 map.uiSettings.isCompassEnabled = false
                 map.uiSettings.isAttributionEnabled = true
                 map.setStyle("https://tiles.openfreemap.org/styles/dark") {
+                    styleReady = true
                     val points = route?.geometry.orEmpty()
-                    val center = if (points.isEmpty()) LatLng(23.7, 76.0) else LatLng(
-                        (points.minOf { it.latitude } + points.maxOf { it.latitude }) / 2,
-                        (points.minOf { it.longitude } + points.maxOf { it.longitude }) / 2,
-                    )
+                    val center = if (points.isEmpty()) LatLng(23.7, 76.0) else {
+                        val south = points.minOf { it.latitude }
+                        val north = points.maxOf { it.latitude }
+                        LatLng(south - (north - south) * 0.15 - 1.0,
+                            (points.minOf { it.longitude } + points.maxOf { it.longitude }) / 2)
+                    }
                     map.cameraPosition = CameraPosition.Builder()
                         .target(center)
-                        .zoom(4.55)
+                        .zoom(if (points.isEmpty()) 4.55 else if (points.maxOf { it.latitude } - points.minOf { it.latitude } > 11) 4.0 else 4.3)
                         .build()
                     if (points.size >= 2) {
                         map.addPolyline(
@@ -73,14 +91,17 @@ fun RailMap(
                                 .width(5f)
                         )
                     }
+                    syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
+                        observedIcon, estimatedIcon, previewIcon, markerRefs)
                     this@apply.post { publishBounds() }
                 }
             }
         }
     }
-    val markerRefs = remember(mapView) { mutableListOf<Marker>() }
 
     DisposableEffect(lifecycle, mapView) {
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) mapView.onStart()
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onResume()
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> mapView.onStart()
@@ -98,20 +119,42 @@ fun RailMap(
         }
     }
 
-    key(route?.trainNumber) {
-        AndroidView(factory = { mapView }, modifier = modifier.fillMaxSize(), update = { view ->
-            view.getMapAsync { map ->
-                markerRefs.forEach { map.removeMarker(it) }
-                markerRefs.clear()
-                networkTrains.forEach { train ->
-                    markerRefs += map.addMarker(MarkerOptions()
-                        .position(LatLng(train.coordinate.latitude, train.coordinate.longitude))
-                        .title("${train.trainNumber} · ${train.name}")
-                        .snippet("${train.positionKind} · ${train.source} · ${train.observedAt}")
-                        .icon(if (train.positionKind == "observed") observedIcon else estimatedIcon))
-                }
-            }
-        })
+    key(route?.trainNumber, route?.runDate) {
+        Box(modifier.fillMaxSize().background(Color(0xFF060708))) {
+            AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize().alpha(if (styleReady) 1f else 0f),
+                update = { view ->
+                    view.getMapAsync { map ->
+                        if (map.style != null) syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
+                            observedIcon, estimatedIcon, previewIcon, markerRefs)
+                    }
+                })
+        }
+    }
+}
+
+private fun syncMarkers(map: MapLibreMap, route: RoutePreview?, networkTrains: List<NetworkTrain>,
+                        observedIcon: org.maplibre.android.annotations.Icon,
+                        estimatedIcon: org.maplibre.android.annotations.Icon,
+                        previewIcon: org.maplibre.android.annotations.Icon,
+                        refs: MutableList<Marker>) {
+    refs.forEach { map.removeMarker(it) }
+    refs.clear()
+    route?.positionProgress?.let { progress ->
+        RailGeometry.pointAtProgress(route.geometry, progress)?.let { point ->
+            refs += map.addMarker(MarkerOptions()
+                .position(LatLng(point.latitude, point.longitude))
+                .title("${route.trainNumber} · ${route.displayName}")
+                .snippet(route.positionStatus ?: route.statusLabel)
+                .icon(if (route.isPreview) previewIcon
+                    else if (route.statusLabel.startsWith("STALE")) estimatedIcon else observedIcon))
+        }
+    }
+    networkTrains.forEach { train ->
+        refs += map.addMarker(MarkerOptions()
+            .position(LatLng(train.coordinate.latitude, train.coordinate.longitude))
+            .title("${train.trainNumber} · ${train.name}")
+            .snippet("${train.positionKind} · ${train.source} · ${train.observedAt}")
+            .icon(if (train.positionKind == "observed") observedIcon else estimatedIcon))
     }
 }
 
