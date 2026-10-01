@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,125 +73,120 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
         selectedContainerColor = Color.White.copy(alpha = 0.12f),
         selectedLabelColor = Color.White,
     )
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090A12))) {
-        val mapHeight = if (LocalDensity.current.fontScale >= 1.5f) 96.dp
-            else ((maxHeight - bottomInset) * 0.24f).coerceIn(128.dp, 190.dp)
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
+    OverviewMapLayout(bottomInset,
+        glassTint = Brush.verticalGradient(
+            0f to Color(0xFF0B0C16).copy(alpha = 0.55f),
+            0.2f to Color(0xFF0A0B14).copy(alpha = 0.94f),
+            1f to Color(0xFF090A12).copy(alpha = 0.99f)),
+        map = { modifier, viewport ->
             // Saved summaries have no verified route geometry. This is an unannotated basemap.
-            RailMap(null, modifier = Modifier.fillMaxWidth().height(mapHeight), attribution = mapAttribution)
-            Surface(color = Color.Transparent,
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                modifier = Modifier.fillMaxWidth().weight(1f)) {
-                Column(Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xF00B0C16), Color(0xFF090A12))))
-                    .verticalScroll(rememberScrollState()).padding(20.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.3).sp,
-                            modifier = Modifier.weight(1f).semantics { heading() })
-                        IconButton(onClick = onSettings) {
-                            Icon(Icons.Outlined.Settings, contentDescription = "Open settings", tint = LM.Ink)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text("Your saved rail runs, kept privately on this device.", color = LM.Ink2, fontSize = 15.sp, lineHeight = 21.sp)
-                    if (notice != null) {
-                        Spacer(Modifier.height(13.dp))
-                        Text(notice, color = Color(0xFFFFB84D), fontSize = 13.sp, lineHeight = 19.sp)
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Text("Train origin year", color = LM.Ink2, fontSize = 12.sp)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        FilterChip(selected = year == null, onClick = { selectedYear = null }, label = { Text("All-Time") },
-                            shape = CircleShape, colors = periodColors, border = null, modifier = Modifier.heightIn(min = 48.dp))
-                        years.forEach { option ->
-                            FilterChip(selected = year == option, onClick = { selectedYear = option }, label = { Text(option.toString()) },
-                                shape = CircleShape, colors = periodColors, border = null, modifier = Modifier.heightIn(min = 48.dp))
-                        }
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Surface(
-                        color = Color.Transparent,
-                        shape = RoundedCornerShape(26.dp),
-                        border = BorderStroke(1.dp, Color(0xFF9678FF).copy(alpha = 0.22f)),
-                        shadowElevation = 20.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.background(Brush.linearGradient(
-                            listOf(Color(0xFF17123A), Color(0xFF100D28), Color(0xFF0A0A1C)))).padding(22.dp)) {
-                            Text("SAVED RUNS · ${year ?: "ALL-TIME"}", color = Color(0xFFC7BBE7), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                            Spacer(Modifier.height(17.dp))
-                            val distance = metrics.knownDistanceKm
-                            Text(buildAnnotatedString {
-                                if (savedRuns.isEmpty()) append("Your first run awaits")
-                                else if (distance != null) {
-                                    append(java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN")).format(distance))
-                                    withStyle(SpanStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFCFBBF6))) {
-                                        append(" km")
-                                    }
-                                } else append("Distance unavailable")
-                            }, color = Color.White,
-                                fontSize = if (distance != null && savedRuns.isNotEmpty()) 56.sp else 29.sp,
-                                fontWeight = FontWeight.ExtraBold, lineHeight = if (distance != null) 60.sp else 36.sp,
-                                letterSpacing = (-2).sp)
-                            Spacer(Modifier.height(10.dp))
-                            Text(if (savedRuns.isNotEmpty()) "Distance in saved runs. This is not verified travel history."
-                                else if (metrics.previewCount > 0) "${metrics.previewCount} sample route${if (metrics.previewCount == 1) "" else "s"} saved separately. Preview routes are not counted as travel."
-                                else "Save a dated journey to start your private collection.",
-                                color = Color(0xFFCFBBF6), fontSize = 14.sp, lineHeight = 21.sp)
-                            if (savedRuns.isNotEmpty()) {
-                                Spacer(Modifier.height(20.dp))
-                                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
-                                    PassportMetric("SAVED RUNS", metrics.runCount.toString(), Modifier.weight(1f))
-                                    PassportMetric("SCHEDULED", metrics.scheduledDurationLabel, Modifier.weight(1f))
-                                    PassportMetric("STATIONS", metrics.stationCount.toString(), Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(30.dp))
-                    Text("Saved journeys", color = LM.Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.semantics { heading() })
-                    Spacer(Modifier.height(15.dp))
-                    if (filteredRoutes.isNotEmpty()) {
-                        filteredRoutes.forEach { route ->
-                        val unavailableReason = route.openUnavailableReason()
-                        Surface(
-                            color = Color(0xFF1A1C22),
-                            shape = RoundedCornerShape(23.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                                .clickable(enabled = unavailableReason == null) { onOpen(route) }
-                        ) {
-                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Icon(Icons.Outlined.Train, contentDescription = null, tint = LM.Accent)
-                                Column(Modifier.weight(1f)) {
-                                    Text(route.trainName, color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                    Text("${route.trainNumber} · ${route.originCode} → ${route.destinationCode} · ${if (route.preview) "Preview" else route.originDate ?: "Origin date unavailable"}",
-                                        color = LM.Ink2, fontSize = 12.sp)
-                                    if (unavailableReason != null) Text(unavailableReason, color = LM.Ink2,
-                                        fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp))
-                                }
-                                IconButton(onClick = { onRemove(route.key) }) {
-                                    Icon(Icons.Outlined.DeleteOutline,
-                                        contentDescription = "Remove ${route.trainNumber}, ${route.originCode} to ${route.destinationCode}, ${if (route.preview) "preview" else route.originDate ?: "dated run"}",
-                                        tint = LM.Ink2)
-                                }
-                            }
-                        }
-                        }
-                    } else {
-                        Surface(color = Color(0xFF1A1C22), shape = RoundedCornerShape(23.dp), modifier = Modifier.fillMaxWidth()) {
-                            Text("No journeys saved yet", color = LM.Ink2, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
-                        }
-                    }
-                    MapAttributionButton(mapAttribution)
-                    Spacer(Modifier.height(24.dp))
+            RailMap(null, modifier = modifier, attribution = mapAttribution, visibleViewport = viewport)
+        }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.3).sp,
+                    modifier = Modifier.weight(1f).semantics { heading() })
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Outlined.Settings, contentDescription = "Open settings", tint = LM.Ink)
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Text("Your saved rail runs, kept privately on this device.", color = LM.Ink2, fontSize = 15.sp, lineHeight = 21.sp)
+            if (notice != null) {
+                Spacer(Modifier.height(13.dp))
+                Text(notice, color = Color(0xFFFFB84D), fontSize = 13.sp, lineHeight = 19.sp)
+            }
+            Spacer(Modifier.height(20.dp))
+            Text("Train origin year", color = LM.Ink2, fontSize = 12.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilterChip(selected = year == null, onClick = { selectedYear = null }, label = { Text("All-Time") },
+                    shape = CircleShape, colors = periodColors, border = null, modifier = Modifier.heightIn(min = 48.dp))
+                years.forEach { option ->
+                    FilterChip(selected = year == option, onClick = { selectedYear = option }, label = { Text(option.toString()) },
+                        shape = CircleShape, colors = periodColors, border = null, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Surface(
+                color = Color.Transparent,
+                shape = RoundedCornerShape(26.dp),
+                border = BorderStroke(1.dp, Color(0xFF9678FF).copy(alpha = 0.22f)),
+                shadowElevation = 20.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.background(Brush.linearGradient(
+                    listOf(Color(0xFF17123A), Color(0xFF100D28), Color(0xFF0A0A1C)))).padding(22.dp)) {
+                    Text("SAVED RUNS · ${year ?: "ALL-TIME"}", color = Color(0xFFC7BBE7), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                    Spacer(Modifier.height(17.dp))
+                    val distance = metrics.knownDistanceKm
+                    Text(buildAnnotatedString {
+                        if (savedRuns.isEmpty()) append("Your first run awaits")
+                        else if (distance != null) {
+                            append(java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN")).format(distance))
+                            withStyle(SpanStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFCFBBF6))) {
+                                append(" km")
+                            }
+                        } else append("Distance unavailable")
+                    }, color = Color.White,
+                        fontSize = if (distance != null && savedRuns.isNotEmpty()) 56.sp else 29.sp,
+                        fontWeight = FontWeight.ExtraBold, lineHeight = if (distance != null) 60.sp else 36.sp,
+                        letterSpacing = (-2).sp)
+                    Spacer(Modifier.height(10.dp))
+                    Text(if (savedRuns.isNotEmpty()) "Distance in saved runs. This is not verified travel history."
+                        else if (metrics.previewCount > 0) "${metrics.previewCount} sample route${if (metrics.previewCount == 1) "" else "s"} saved separately. Preview routes are not counted as travel."
+                        else "Save a dated journey to start your private collection.",
+                        color = Color(0xFFCFBBF6), fontSize = 14.sp, lineHeight = 21.sp)
+                    if (savedRuns.isNotEmpty()) {
+                        Spacer(Modifier.height(20.dp))
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
+                            PassportMetric("SAVED RUNS", metrics.runCount.toString(), Modifier.weight(1f))
+                            PassportMetric("SCHEDULED", metrics.scheduledDurationLabel, Modifier.weight(1f))
+                            PassportMetric("STATIONS", metrics.stationCount.toString(), Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(30.dp))
+            Text("Saved journeys", color = LM.Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics { heading() })
+            Spacer(Modifier.height(15.dp))
+            if (filteredRoutes.isNotEmpty()) {
+                filteredRoutes.forEach { route ->
+                val unavailableReason = route.openUnavailableReason()
+                Surface(
+                    color = Color(0xFF1A1C22),
+                    shape = RoundedCornerShape(23.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                        .clickable(enabled = unavailableReason == null) { onOpen(route) }
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Outlined.Train, contentDescription = null, tint = LM.Accent)
+                        Column(Modifier.weight(1f)) {
+                            Text(route.trainName, color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${route.trainNumber} · ${route.originCode} → ${route.destinationCode} · ${if (route.preview) "Preview" else route.originDate ?: "Origin date unavailable"}",
+                                color = LM.Ink2, fontSize = 12.sp)
+                            if (unavailableReason != null) Text(unavailableReason, color = LM.Ink2,
+                                fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp))
+                        }
+                        IconButton(onClick = { onRemove(route.key) }) {
+                            Icon(Icons.Outlined.DeleteOutline,
+                                contentDescription = "Remove ${route.trainNumber}, ${route.originCode} to ${route.destinationCode}, ${if (route.preview) "preview" else route.originDate ?: "dated run"}",
+                                tint = LM.Ink2)
+                        }
+                    }
+                }
+                }
+            } else {
+                Surface(color = Color(0xFF1A1C22), shape = RoundedCornerShape(23.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("No journeys saved yet", color = LM.Ink2, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
+                }
+            }
+            MapAttributionButton(mapAttribution)
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

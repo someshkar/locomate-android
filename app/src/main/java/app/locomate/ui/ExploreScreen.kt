@@ -1,10 +1,6 @@
 package app.locomate.ui
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -14,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,7 +26,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -40,7 +34,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -133,63 +126,52 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
             onOpenJourney?.invoke(reference)
         }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090A12))) {
-        val largeText = LocalDensity.current.fontScale >= 1.5f
-        val mapHeight = if (largeText) 96.dp
-            else ((maxHeight - bottomInset) * 0.24f).coerceIn(128.dp, 190.dp)
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
-            RailMap(if (gateway.configured) null else route,
-                modifier = Modifier.fillMaxWidth().height(mapHeight), networkTrains = trains,
-                onVisibleBounds = { bounds = it }, attribution = mapAttribution,
-                onNetworkTrainSelected = if (onOpenJourney != null) ::openCurrentJourney else null,
-                onNetworkClusterSelected = if (onOpenJourney != null) { selected ->
-                    listing = NetworkListScope.Cluster(selected.mapNotNull { it.datedIdentity() }.toSet())
-                } else null)
-            Surface(
-                color = Color.Transparent,
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            ) {
-                Column(Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xF00B0C16), Color(0xFF090A12))))
-                    .verticalScroll(rememberScrollState()).padding(22.dp)) {
-                    Text("Explore", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-1.2).sp, modifier = Modifier.semantics { heading() })
-                    Text(if (gateway.configured) "The network, live" else "The network, in preview",
-                        color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
-                    if (!gateway.configured) Text("PREVIEW", color = Color(0xFFBCA7FF),
-                        fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                    if (gateway.configured && largeText) NetworkTrainListButton(snapshot != null && !expired) {
-                        listing = NetworkListScope.All
-                    }
-                    if (gateway.configured && snapshot != null && !expired) {
-                        FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
-                            NetworkStat("IN VIEW", trains.size, Modifier.weight(1f))
-                            NetworkStat("OBSERVED", trains.count { it.positionKind == "observed" }, Modifier.weight(1f))
-                            NetworkStat("PREDICTED", trains.count { it.positionKind == "predicted" }, Modifier.weight(1f))
-                        }
-                    }
-                    if (gateway.configured && !largeText) NetworkTrainListButton(snapshot != null && !expired) {
-                        listing = NetworkListScope.All
-                    }
-                    Text("POSITION SOURCES", color = LM.Ink3, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp, modifier = Modifier.padding(top = 22.dp, bottom = 12.dp))
-                    Text(if (gateway.configured) {
-                        when {
-                            expired -> "Positions expired. ${error ?: "Refreshing the network…"}"
-                            error != null -> "Refresh unavailable. Valid positions remain until they expire. ${error.orEmpty()}"
-                            snapshot != null -> "${trains.size} fresh gateway train markers in this map view. Positions carry their own source and observation time."
-                            else -> "Loading train positions for this map view…"
-                        }
-                    } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
-                        color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
-                    MapAttributionButton(mapAttribution)
-                    Spacer(Modifier.height(24.dp))
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    OverviewMapLayout(bottomInset, map = { modifier, viewport ->
+        RailMap(if (gateway.configured) null else route,
+            modifier = modifier, networkTrains = trains,
+            onVisibleBounds = { bounds = it }, attribution = mapAttribution,
+            visibleViewport = viewport,
+            onNetworkTrainSelected = if (onOpenJourney != null) ::openCurrentJourney else null,
+            onNetworkClusterSelected = if (onOpenJourney != null) { selected ->
+                listing = NetworkListScope.Cluster(selected.mapNotNull { it.datedIdentity() }.toSet())
+            } else null)
+    }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp)) {
+            Text("Explore", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-1.2).sp, modifier = Modifier.semantics { heading() })
+            Text(if (gateway.configured) "The network, live" else "The network, in preview",
+                color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+            if (!gateway.configured) Text("PREVIEW", color = Color(0xFFBCA7FF),
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+            if (gateway.configured && largeText) NetworkTrainListButton(snapshot != null && !expired) {
+                listing = NetworkListScope.All
+            }
+            if (gateway.configured && snapshot != null && !expired) {
+                FlowRow(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
+                    NetworkStat("IN VIEW", trains.size, Modifier.weight(1f))
+                    NetworkStat("OBSERVED", trains.count { it.positionKind == "observed" }, Modifier.weight(1f))
+                    NetworkStat("PREDICTED", trains.count { it.positionKind == "predicted" }, Modifier.weight(1f))
                 }
             }
+            if (gateway.configured && !largeText) NetworkTrainListButton(snapshot != null && !expired) {
+                listing = NetworkListScope.All
+            }
+            Text("POSITION SOURCES", color = LM.Ink3, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp, modifier = Modifier.padding(top = 22.dp, bottom = 12.dp))
+            Text(if (gateway.configured) {
+                when {
+                    expired -> "Positions expired. ${error ?: "Refreshing the network…"}"
+                    error != null -> "Refresh unavailable. Valid positions remain until they expire. ${error.orEmpty()}"
+                    snapshot != null -> "${trains.size} fresh gateway train markers in this map view. Positions carry their own source and observation time."
+                    else -> "Loading train positions for this map view…"
+                }
+            } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
+                color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+            MapAttributionButton(mapAttribution)
+            Spacer(Modifier.height(24.dp))
         }
     }
     listing?.let { scope ->

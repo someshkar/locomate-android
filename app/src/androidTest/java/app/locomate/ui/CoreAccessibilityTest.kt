@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.SemanticsMatcher
@@ -124,15 +125,18 @@ class CoreAccessibilityTest {
         val routes = PreviewRoutes.load(compose.activity)
         val train = routes.first { it.trainNumber == "12951" }
         val gateway = RailGateway(compose.activity, "")
+        val glass = MapGlassController()
         var selected: String? = null
         compose.setContent { AuditTheme {
-            NavigationScaffold(Tab.Passport, {}, {}, searchActive = true) { inset ->
+            NavigationScaffold(Tab.Passport, {}, {}, searchActive = true, mapGlass = glass) { inset ->
                 SearchScreen(routes, gateway, { selected = it }, { _, _ -> }, bottomInset = inset)
             }
         } }
+        compose.waitUntil(15_000) { glass.snapshot != null }
         compose.enableAccessibilityChecks()
         val field = compose.onNodeWithText("Train name or number").performScrollTo()
-        field.performTextInput(train.trainNumber)
+        field.performClick().performTextInput(train.trainNumber)
+        compose.waitUntil(10_000) { glass.snapshot == null }
         compose.onNodeWithText("Train name or number").assertIsDisplayed().tryPerformAccessibilityChecks()
         for (label in listOf("Journeys", "Explore", "Passport", "Search trains")) {
             compose.onNodeWithContentDescription(label).assertIsDisplayed().assertHasClickAction()
@@ -141,6 +145,7 @@ class CoreAccessibilityTest {
         saveScreenshot("search-200")
         assertVisibleTextFits()
         field.performImeAction()
+        compose.waitUntil(15_000) { glass.snapshot != null }
         val result = compose.onNodeWithText("${train.trainNumber} · ${train.name}", useUnmergedTree = true)
             .performScrollTo().assertIsDisplayed().tryPerformAccessibilityChecks()
         val layouts = mutableListOf<TextLayoutResult>()
@@ -169,21 +174,35 @@ class CoreAccessibilityTest {
     @Test fun passportRemovalNamesTheSpecificJourney() {
         val route = PreviewRoutes.load(compose.activity).first().copy(isPreview = false, runDate = "2026-10-01")
         val saved = SavedJourney.from(route)
-        compose.setContent { AuditTheme { PassportScreen(listOf(saved), onRemove = {}, onOpen = {}, onSettings = {}) } }
+        val glass = MapGlassController()
+        compose.setContent { AuditTheme {
+            NavigationScaffold(Tab.Passport, {}, {}, mapGlass = glass) { inset ->
+                PassportScreen(listOf(saved), onRemove = {}, onOpen = {}, onSettings = {}, bottomInset = inset)
+            }
+        } }
+        compose.waitUntil(15_000) { glass.snapshot != null }
         compose.enableAccessibilityChecks()
-        compose.onNodeWithText("Passport").tryPerformAccessibilityChecks()
+        compose.onNode(hasText("Passport") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).tryPerformAccessibilityChecks()
+        saveScreenshot("passport-glass-200")
         assertVisibleTextFits()
         compose.onNodeWithContentDescription("Remove ${saved.trainNumber}, ${saved.originCode} to ${saved.destinationCode}, ${saved.originDate}")
             .performScrollTo().assertHasClickAction().tryPerformAccessibilityChecks()
+        saveScreenshot("passport-glass-removal-200")
         assertVisibleTextFits()
     }
 
     @Test fun exploreOverviewRemainsReadableAtLargeText() {
         val route = PreviewRoutes.load(compose.activity).first()
         val gateway = RailGateway(compose.activity, "")
-        compose.setContent { AuditTheme { ExploreScreen(route, gateway) } }
+        val glass = MapGlassController()
+        compose.setContent { AuditTheme {
+            NavigationScaffold(Tab.Explore, {}, {}, mapGlass = glass) { inset ->
+                ExploreScreen(route, gateway, bottomInset = inset)
+            }
+        } }
+        compose.waitUntil(15_000) { glass.snapshot != null }
         compose.enableAccessibilityChecks()
-        compose.onNodeWithText("Explore").tryPerformAccessibilityChecks()
+        compose.onNode(hasText("Explore") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).tryPerformAccessibilityChecks()
         compose.onNodeWithText("PREVIEW").assertIsDisplayed()
         saveScreenshot("explore-200")
         assertVisibleTextFits()
@@ -192,9 +211,11 @@ class CoreAccessibilityTest {
     @Test fun exploreCreditsStayAboveTheProductionNavigationDockAtLargeText() {
         val route = PreviewRoutes.load(compose.activity).first()
         val gateway = RailGateway(compose.activity, "")
+        val glass = MapGlassController()
         compose.setContent { AuditTheme {
-            NavigationScaffold(Tab.Explore, {}, {}) { inset -> ExploreScreen(route, gateway, bottomInset = inset) }
+            NavigationScaffold(Tab.Explore, {}, {}, mapGlass = glass) { inset -> ExploreScreen(route, gateway, bottomInset = inset) }
         } }
+        compose.waitUntil(15_000) { glass.snapshot != null }
         compose.enableAccessibilityChecks()
         val credits = compose.onNodeWithText("Map attribution").performScrollTo().assertIsDisplayed()
         val dock = compose.onNodeWithContentDescription("Explore").assertIsSelected()

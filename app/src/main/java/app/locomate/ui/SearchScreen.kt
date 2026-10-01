@@ -2,10 +2,8 @@ package app.locomate.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,14 +34,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -107,122 +102,113 @@ fun SearchScreen(
         query.isBlank() || it.trainNumber.contains(query.trim()) || it.name.contains(query.trim(), ignoreCase = true)
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF090A12))) {
-        val mapHeight = if (density.fontScale >= 1.5f) 96.dp
-            else ((maxHeight - bottomInset) * 0.24f).coerceIn(128.dp, 190.dp)
-        Column(Modifier.fillMaxSize().statusBarsPadding().padding(bottom = bottomInset)) {
-            RailMap(null, modifier = Modifier.fillMaxWidth().height(if (keyboardVisible) 0.dp else mapHeight),
-                attribution = attribution)
-            Surface(Modifier.fillMaxWidth().weight(1f).semantics { paneTitle = "Search trains" },
-                color = Color.Transparent,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
-                Column(Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xF00B0C16), Color(0xFF090A12))))
-                    .verticalScroll(rememberScrollState()).padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text("Search", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp, color = LM.Ink,
-                            modifier = Modifier.weight(1f).semantics { heading() })
-                    }
-                    Text("Find trains by name or number", color = LM.Ink2, fontSize = 15.sp)
-                    Spacer(Modifier.height(18.dp))
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.Ink2) },
-                        label = { Text("Train name or number", color = LM.Ink2) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = LM.Raised,
-                            unfocusedContainerColor = LM.Raised,
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (gateway.configured) {
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = date,
-                            onValueChange = { date = it.take(10) },
-                            label = { Text("Origin date · India time", color = LM.Ink2) },
-                            supportingText = { Text("YYYY-MM-DD", color = LM.Ink3) },
-                            isError = runCatching { LocalDate.parse(date) }.isFailure,
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = LM.Raised,
-                                unfocusedContainerColor = LM.Raised,
-                                errorContainerColor = LM.Raised,
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                errorBorderColor = LM.Error,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    Spacer(Modifier.height(30.dp))
-                    Text(if (gateway.configured) "RAIL GATEWAY" else "PREVIEW CATALOGUE", color = LM.Ink3,
-                        fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Text(if (gateway.configured) "Search for a train, then choose its India origin date."
-                        else "Sample trains for design review. Live search appears when a rail gateway is configured.",
-                        color = LM.Ink2, fontSize = 13.sp, lineHeight = 19.sp)
-                    Spacer(Modifier.height(22.dp))
-                    if (searching) Text("Searching…", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
-                    if (searchError != null) Text(searchError.orEmpty(), color = Color(0xFFFFB84D), modifier = Modifier.padding(vertical = 20.dp))
-                    if (gateway.configured && !searching && query.isNotBlank() && liveResults.isEmpty() && searchError == null) {
-                        Text("No matching trains found.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
-                    }
-                    if (!gateway.configured && results.isEmpty()) {
-                        Text("No sample train matches this search.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
-                    }
-                    if (gateway.configured) liveResults.forEach { train ->
-                        Surface(
-                            color = LM.Elevated,
-                            shape = RoundedCornerShape(22.dp),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(
-                                enabled = !searching && runCatching { LocalDate.parse(date) }.isSuccess
-                            ) { if (query.trim() == requestQuery) onSelectLive(train, date) }
-                        ) {
-                            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("${train.number} · ${train.name}", color = LM.Ink,
-                                        fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                    Spacer(Modifier.height(5.dp))
-                                    Text("${train.originName} → ${train.destinationName}", color = LM.Ink2, fontSize = 13.sp)
-                                }
-                                Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink2,
-                                    modifier = Modifier.size(22.dp))
-                            }
+    OverviewMapLayout(bottomInset, keyboardVisible = keyboardVisible,
+        map = { modifier, viewport ->
+            RailMap(null, modifier = modifier, attribution = attribution, visibleViewport = viewport)
+        }) {
+        Column(Modifier.fillMaxSize().semantics { paneTitle = "Search trains" }
+            .verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Search", fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp, color = LM.Ink,
+                    modifier = Modifier.weight(1f).semantics { heading() })
+            }
+            Text("Find trains by name or number", color = LM.Ink2, fontSize = 15.sp)
+            Spacer(Modifier.height(18.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.Ink2) },
+                label = { Text("Train name or number", color = LM.Ink2) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                shape = RoundedCornerShape(18.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = LM.Raised,
+                    unfocusedContainerColor = LM.Raised,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (gateway.configured) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = { date = it.take(10) },
+                    label = { Text("Origin date · India time", color = LM.Ink2) },
+                    supportingText = { Text("YYYY-MM-DD", color = LM.Ink3) },
+                    isError = runCatching { LocalDate.parse(date) }.isFailure,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = LM.Raised,
+                        unfocusedContainerColor = LM.Raised,
+                        errorContainerColor = LM.Raised,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        errorBorderColor = LM.Error,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(30.dp))
+            Text(if (gateway.configured) "RAIL GATEWAY" else "PREVIEW CATALOGUE", color = LM.Ink3,
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+            Spacer(Modifier.height(10.dp))
+            Text(if (gateway.configured) "Search for a train, then choose its India origin date."
+                else "Sample trains for design review. Live search appears when a rail gateway is configured.",
+                color = LM.Ink2, fontSize = 13.sp, lineHeight = 19.sp)
+            Spacer(Modifier.height(22.dp))
+            if (searching) Text("Searching…", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
+            if (searchError != null) Text(searchError.orEmpty(), color = Color(0xFFFFB84D), modifier = Modifier.padding(vertical = 20.dp))
+            if (gateway.configured && !searching && query.isNotBlank() && liveResults.isEmpty() && searchError == null) {
+                Text("No matching trains found.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
+            }
+            if (!gateway.configured && results.isEmpty()) {
+                Text("No sample train matches this search.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
+            }
+            if (gateway.configured) liveResults.forEach { train ->
+                Surface(
+                    color = LM.Elevated,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(
+                        enabled = !searching && runCatching { LocalDate.parse(date) }.isSuccess
+                    ) { if (query.trim() == requestQuery) onSelectLive(train, date) }
+                ) {
+                    Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("${train.number} · ${train.name}", color = LM.Ink,
+                                fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(5.dp))
+                            Text("${train.originName} → ${train.destinationName}", color = LM.Ink2, fontSize = 13.sp)
                         }
+                        Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink2,
+                            modifier = Modifier.size(22.dp))
                     }
-                    if (!gateway.configured) results.forEach { train ->
-                        Surface(
-                            color = LM.Elevated,
-                            shape = RoundedCornerShape(22.dp),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onSelect(train.trainNumber) }
-                        ) {
-                            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Column(Modifier.weight(1f)) {
-                                Text("${train.trainNumber} · ${train.name}", color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                    Spacer(Modifier.height(5.dp))
-                                    Text(train.routeLabel, color = LM.Ink2, fontSize = 13.sp)
-                                }
-                                Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink2, modifier = Modifier.size(22.dp))
-                            }
-                        }
-                    }
-                    MapAttributionButton(attribution)
-                    Spacer(Modifier.height(12.dp))
                 }
             }
+            if (!gateway.configured) results.forEach { train ->
+                Surface(
+                    color = LM.Elevated,
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onSelect(train.trainNumber) }
+                ) {
+                    Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f)) {
+                        Text("${train.trainNumber} · ${train.name}", color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(5.dp))
+                            Text(train.routeLabel, color = LM.Ink2, fontSize = 13.sp)
+                        }
+                        Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink2, modifier = Modifier.size(22.dp))
+                    }
+                }
+            }
+            MapAttributionButton(attribution)
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

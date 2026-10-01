@@ -19,6 +19,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,6 +58,7 @@ fun RailMap(
     onNetworkClusterSelected: ((List<NetworkTrain>) -> Unit)? = null,
     journeyCamera: JourneyMapController? = null,
     sheetVisibleHeight: Float = 0f,
+    visibleViewport: Rect? = null,
 ) {
     // MapLibre initialization can block the UI thread. Draw the sheet and dark
     // map placeholder first, then create the native map on the following frame.
@@ -74,6 +76,7 @@ fun RailMap(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapGlass = LocalMapGlass.current
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
+    val currentViewport = rememberUpdatedState(visibleViewport)
     val currentRoute = rememberUpdatedState(route)
     val currentNetworkTrains = rememberUpdatedState(networkTrains)
     val currentTrainSelection = rememberUpdatedState(onNetworkTrainSelected)
@@ -88,6 +91,7 @@ fun RailMap(
     val markerSelections = remember(route?.trainNumber, route?.runDate) { mutableMapOf<Long, List<NetworkTrain>>() }
     val mapActive = remember(route?.trainNumber, route?.runDate) { java.util.concurrent.atomic.AtomicBoolean(true) }
     val routeOverlay = remember(route?.trainNumber, route?.runDate) { RouteOverlaySync() }
+    val viewportSync = remember(route?.trainNumber, route?.runDate) { MapViewportSync() }
     val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
         MapView(context).apply {
@@ -96,10 +100,8 @@ fun RailMap(
             getMapAsync { map ->
                 fun publishBounds() {
                     if (!mapActive.get()) return
-                    val bounds = map.projection.visibleRegion.latLngBounds
-                    if (bounds.longitudeSpan > 0 && bounds.latitudeSpan > 0) {
-                        currentBoundsCallback.value?.invoke(NetworkBounds(
-                            bounds.longitudeWest, bounds.latitudeSouth, bounds.longitudeEast, bounds.latitudeNorth))
+                    visibleMapBounds(this@apply, map, currentViewport.value)?.let {
+                        currentBoundsCallback.value?.invoke(it)
                     }
                 }
                 map.setOnInfoWindowClickListener { marker ->
@@ -135,7 +137,10 @@ fun RailMap(
                     .zoom(if (points.isEmpty()) 4.55 else if (points.maxOf { it.latitude } - points.minOf { it.latitude } > 11) 4.0 else 4.3)
                     .build()
                 // Rail data and the accessible list must not depend on a basemap download.
-                this@apply.doOnLayout { publishBounds() }
+                this@apply.doOnLayout {
+                    viewportSync.update(this@apply, map, currentViewport.value)
+                    publishBounds()
+                }
                 map.setStyle(BuildConfig.MAP_STYLE_URL) {
                     if (!mapActive.get()) return@setStyle
                     styleReady = true
@@ -156,6 +161,18 @@ fun RailMap(
     }
 
     DisposableEffect(lifecycle, mapView) {
+        val resized = android.view.View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                mapView.getMapAsync { map ->
+                    if (!mapActive.get()) return@getMapAsync
+                    viewportSync.update(mapView, map, currentViewport.value)
+                    visibleMapBounds(mapView, map, currentViewport.value)?.let {
+                        currentBoundsCallback.value?.invoke(it)
+                    }
+                }
+            }
+        }
+        mapView.addOnLayoutChangeListener(resized)
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) mapView.onStart()
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onResume()
         val observer = LifecycleEventObserver { _, event ->
@@ -171,6 +188,7 @@ fun RailMap(
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+            mapView.removeOnLayoutChangeListener(resized)
             mapActive.set(false)
             attribution?.detach(mapView)
             journeyCamera?.detach(mapView)
@@ -185,11 +203,19 @@ fun RailMap(
                 update = { view ->
                     val routeSnapshot = currentRoute.value
                     val networkSnapshot = currentNetworkTrains.value
+                    // Read before the async native callback so AndroidView observes
+                    // viewport-only changes, even when the view size is unchanged.
+                    val viewportSnapshot = currentViewport.value
                     mapGlass?.updateContent(view, routeSnapshot to networkSnapshot)
                     journeyCamera?.update(routeSnapshot, sheetVisibleHeight)
                     view.getMapAsync { map ->
                         if (!mapActive.get() || routeSnapshot != currentRoute.value
-                            || networkSnapshot != currentNetworkTrains.value) return@getMapAsync
+                            || networkSnapshot != currentNetworkTrains.value
+                            || viewportSnapshot != currentViewport.value) return@getMapAsync
+                        viewportSync.update(view, map, viewportSnapshot)
+                        visibleMapBounds(view, map, viewportSnapshot)?.let {
+                            currentBoundsCallback.value?.invoke(it)
+                        }
                         if (map.style != null) routeOverlay.update(map, routeSnapshot)
                         if (map.style != null && markerSync.needsUpdate(
                                 routeSnapshot, networkSnapshot, map.cameraPosition.zoom)) {
