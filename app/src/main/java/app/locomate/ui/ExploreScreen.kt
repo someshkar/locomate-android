@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +54,7 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway) {
             error = failure.message ?: "The network feed is unavailable."
         }
     }
+    val trains = snapshot?.trains.orEmpty()
     Box(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
         RailMap(if (gateway.configured) null else route,
             networkTrains = snapshot?.trains.orEmpty(),
@@ -92,6 +94,14 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway) {
             Column(Modifier.fillMaxWidth().padding(22.dp)) {
                 Text(if (gateway.configured) "Network in view" else "India by rail",
                     color = LM.Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                if (gateway.configured && snapshot != null) {
+                    Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NetworkStat("IN VIEW", trains.size, Modifier.weight(1f))
+                        NetworkStat("OBSERVED", trains.count { it.positionKind == "observed" }, Modifier.weight(1f))
+                        NetworkStat("PREDICTED", trains.count { it.positionKind == "predicted" }, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
                 Text(if (gateway.configured) {
                     when {
                         error != null -> "Last valid markers retained. ${error.orEmpty()}"
@@ -101,6 +111,18 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway) {
                 } else "Explore a historical route sample. Live network trains appear when a rail gateway is configured.",
                     color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun NetworkStat(label: String, value: Int, modifier: Modifier) {
+    Surface(color = LM.Raised, shape = RoundedCornerShape(14.dp), modifier = modifier) {
+        Column(Modifier.padding(10.dp)) {
+            Text(value.toString(), color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1)
+            Text(label, color = LM.Ink3, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp, maxLines = 1)
         }
     }
 }

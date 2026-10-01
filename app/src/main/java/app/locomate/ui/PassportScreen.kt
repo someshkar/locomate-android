@@ -81,8 +81,11 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                     color = LM.Ink2, fontSize = 14.sp, lineHeight = 21.sp)
                 if (savedRuns.isNotEmpty()) {
                     Spacer(Modifier.height(20.dp))
-                    Text("${metrics.runCount} RUNS      ${metrics.stationCount} STATIONS      ${metrics.knownScheduledHours?.let { "${it}H SCHEDULED" } ?: "TIME UNAVAILABLE"}",
-                        color = LM.Ink2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PassportMetric("SAVED RUNS", metrics.runCount.toString(), Modifier.weight(1f))
+                        PassportMetric("SCHEDULED", metrics.knownScheduledHours?.let { "${it}h" } ?: "—", Modifier.weight(1f))
+                        PassportMetric("STATIONS", metrics.stationCount.toString(), Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -117,5 +120,16 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
             }
         }
         Spacer(Modifier.height(140.dp))
+    }
+}
+
+@Composable
+private fun PassportMetric(label: String, value: String, modifier: Modifier) {
+    Column(modifier) {
+        Text(label, color = LM.Ink3, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp, maxLines = 1)
+        Spacer(Modifier.height(5.dp))
+        Text(value, color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold,
+            maxLines = 1)
     }
 }
