@@ -69,7 +69,9 @@ fun RootView() {
     val planStore = remember { JourneyPlanStore(context) }
     val gateway = remember { RailGateway(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val routes = remember { PreviewRoutes.load(context) }
+    val routes = remember(gateway.configured) {
+        if (gateway.configured) emptyList() else PreviewRoutes.load(context)
+    }
     var tab by rememberSaveable { mutableStateOf(Tab.Journeys) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
