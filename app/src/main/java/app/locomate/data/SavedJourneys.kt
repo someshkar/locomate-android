@@ -33,6 +33,13 @@ data class SavedJourney(
             val baseKey = if (route.isPreview) "preview:${route.trainNumber}" else "run:${route.trainNumber}:${route.runDate}"
             val distance = if (wholeRun) route.distanceKm else if (board?.distanceKm != null && leave?.distanceKm != null)
                 (leave.distanceKm - board.distanceKm).coerceAtLeast(0.0) else 0.0
+            val duration = if (wholeRun) route.durationMinutes else {
+                val departure = board?.scheduledDepartureMillis
+                val arrival = leave?.scheduledArrivalMillis
+                if (departure == null || arrival == null || arrival <= departure) 0
+                else ((arrival - departure) / 60_000)
+                    .takeIf { it in 1L..Int.MAX_VALUE.toLong() }?.toInt() ?: 0
+            }
             return SavedJourney(
             key = if (wholeRun) baseKey else "$baseKey:${validPlan.boardingCode}:${validPlan.alightingCode}",
             trainNumber = route.trainNumber,
@@ -43,7 +50,7 @@ data class SavedJourney(
             destinationName = leave?.name ?: route.destinationName,
             originDate = route.runDate,
             distanceKm = distance,
-            durationMinutes = if (wholeRun) route.durationMinutes else 0,
+            durationMinutes = duration,
             preview = route.isPreview,
         )
         }
@@ -62,19 +69,32 @@ data class PassportMetrics(
     val knownDistanceKm: Int?,
     val stationCount: Int,
     val knownScheduledHours: Int?,
+    val knownScheduledMinutes: Long? = knownScheduledHours?.toLong()?.times(60),
 ) {
+    val scheduledDurationLabel: String get() {
+        val minutes = knownScheduledMinutes?.takeIf { it > 0 } ?: return "—"
+        val hours = minutes / 60
+        val remainder = minutes % 60
+        return when {
+            hours == 0L -> "${minutes}m"
+            remainder == 0L -> "${hours}h"
+            else -> "${hours}h ${remainder}m"
+        }
+    }
+
     companion object {
         fun from(journeys: List<SavedJourney>): PassportMetrics {
             val runs = journeys.filterNot { it.preview }
             val knownDistance = runs.filter { it.distanceKm > 0 }
             val knownDuration = runs.filter { it.durationMinutes > 0 }
+            val totalMinutes = knownDuration.takeIf { it.isNotEmpty() }?.sumOf { it.durationMinutes.toLong() }
             return PassportMetrics(
                 runCount = runs.size,
                 previewCount = journeys.size - runs.size,
                 knownDistanceKm = knownDistance.takeIf { it.isNotEmpty() }?.sumOf { it.distanceKm }?.toInt(),
                 stationCount = runs.flatMap { listOf(it.originCode, it.destinationCode) }.distinct().size,
-                knownScheduledHours = knownDuration.takeIf { it.isNotEmpty() }
-                    ?.sumOf { it.durationMinutes }?.div(60),
+                knownScheduledHours = totalMinutes?.div(60)?.takeIf { it <= Int.MAX_VALUE }?.toInt(),
+                knownScheduledMinutes = totalMinutes,
             )
         }
     }

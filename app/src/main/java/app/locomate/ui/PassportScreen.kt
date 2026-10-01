@@ -123,7 +123,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
                         PassportMetric("SAVED RUNS", metrics.runCount.toString(), Modifier.weight(1f))
-                        PassportMetric("SCHEDULED", metrics.knownScheduledHours?.let { "${it}h" } ?: "—", Modifier.weight(1f))
+                        PassportMetric("SCHEDULED", metrics.scheduledDurationLabel, Modifier.weight(1f))
                         PassportMetric("STATIONS", metrics.stationCount.toString(), Modifier.weight(1f))
                     }
                 }
