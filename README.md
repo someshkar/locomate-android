@@ -4,6 +4,8 @@ Native Kotlin and Jetpack Compose railway journey app. MapLibre renders an inter
 
 The Doop design's Android typography uses bundled Space Grotesk for the interface and IBM Plex Mono for times and source details. Their SIL Open Font License texts are in [`licenses/`](licenses/).
 
+The [Doop canvas](https://doop.design/c/ha6YK6QvsY) is the visual reference. Its dark palette uses `#060708` ground, `#009DFA` signal blue, and `#5FAEF5` route blue. The Journey sheet has 28dp top corners; Android uses a stronger dark scrim because the MapLibre view behind it is not blurred. The current map uses dark vector tiles, while the Journey frame depicts satellite imagery.
+
 ## Build and test
 
 Requirements: JDK 17, Android SDK 36, and an Android 12 (API 31) or newer device or emulator. The Gradle wrapper is included.

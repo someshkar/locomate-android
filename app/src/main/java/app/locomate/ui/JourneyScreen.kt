@@ -115,8 +115,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         val scope = androidx.compose.runtime.rememberCoroutineScope()
 
         Surface(
-            color = Color(0xF51A1C22),
-            shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
+            color = LM.Glass,
+            shape = RoundedCornerShape(topStart = LM.RadiusSheet, topEnd = LM.RadiusSheet),
             shadowElevation = 28.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
             modifier = Modifier.fillMaxWidth()
