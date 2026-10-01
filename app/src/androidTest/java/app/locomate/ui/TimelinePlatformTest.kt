@@ -24,6 +24,7 @@ import app.locomate.data.RouteStop
 import app.locomate.ui.theme.LM
 import app.locomate.ui.theme.LocomateTheme
 import java.io.File
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +33,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class TimelinePlatformTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @Test fun platformStaysWithItsStationAndQualifiesSavedValuesAtBothTextSizes() {
         var scale by mutableStateOf(1f)

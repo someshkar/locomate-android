@@ -23,6 +23,7 @@ import app.locomate.data.RailGeometry
 import app.locomate.data.RailPoint
 import app.locomate.ui.theme.LocomateTheme
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class JourneyMapControlsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @Test fun nativeGlassSnapshotFollowsCameraAndClearsWhenTheActivityStops() {
         var route by mutableStateOf(PreviewRoutes.load(compose.activity).first())

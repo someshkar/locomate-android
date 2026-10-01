@@ -33,6 +33,7 @@ import app.locomate.data.RailGateway
 import app.locomate.data.SavedJourney
 import app.locomate.ui.theme.LocomateTheme
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -46,6 +47,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class OverviewMapGlassTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @Test fun nativeQueriesExcludeCoveredGeographyAndResizePreservesThePannedCamera() {
         val route = PreviewRoutes.load(compose.activity).first()

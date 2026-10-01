@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -43,6 +44,11 @@ internal val LocalDockBackdrop = staticCompositionLocalOf<DockBackdrop?> { null 
 /** GPU drawing commands for the page beneath the dock, excluding the dock itself. */
 internal class DockBackdrop(val layer: GraphicsLayer) {
     var bounds by mutableStateOf(Rect.Zero)
+    private var drawnFrames = 0
+    var revision by mutableIntStateOf(0)
+        private set
+
+    fun pageDrawn() { revision = ++drawnFrames }
 }
 
 /** Replays the page and settled GL texture through a lens; controls are drawn afterward. */
@@ -58,7 +64,7 @@ internal fun DockGlassSurface(modifier: Modifier = Modifier, content: @Composabl
         if (available) {
             val page = requireNotNull(backdrop)
             Canvas(Modifier.matchParentSize().graphicsLayer {
-                renderEffect = lens.effect(size)
+                renderEffect = lens.effect(size, page.revision)
             }) {
                 drawRect(Color(0xFF060708))
                 // SurfaceView's GL pixels are outside Compose's recorded drawing commands.
@@ -91,19 +97,25 @@ internal fun Modifier.dockRim(radius: Float) = drawWithCache {
 
 private class DockLens(density: Float) {
     private val blur = RenderEffect.createBlurEffect(2f * density, 2f * density, Shader.TileMode.CLAMP)
+    private val colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.3f) })
     private val saturated = RenderEffect.createColorFilterEffect(
-        ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(1.3f) }), blur)
+        colorFilter, blur)
     private val refraction = if (Build.VERSION.SDK_INT >= 33) DockRefraction(density) else null
     private var recordedSize = Size.Unspecified
+    private var recordedRevision = -1
     private var recordedEffect = saturated.asComposeRenderEffect()
 
-    fun effect(size: Size): androidx.compose.ui.graphics.RenderEffect {
-        if (size != recordedSize) {
+    fun effect(size: Size, revision: Int): androidx.compose.ui.graphics.RenderEffect {
+        if (size != recordedSize || (Build.VERSION.SDK_INT < 33 && revision != recordedRevision)) {
             recordedSize = size
+            recordedRevision = revision
             if (Build.VERSION.SDK_INT >= 33 && refraction != null) {
                 // RenderEffect captures shader uniforms when created. Set size first,
                 // and rebuild only when geometry changes, not on every draw frame.
                 recordedEffect = RenderEffect.createChainEffect(refraction.effect(size), saturated).asComposeRenderEffect()
+            } else {
+                // Android 12 may cache the prior page inside a reused RenderEffect.
+                recordedEffect = RenderEffect.createColorFilterEffect(colorFilter, blur).asComposeRenderEffect()
             }
         }
         return recordedEffect

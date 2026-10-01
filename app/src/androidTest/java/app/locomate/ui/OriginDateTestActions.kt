@@ -5,6 +5,9 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 
 /** Operates the actual native calendar dialog, including its optional keyboard entry mode. */
 internal fun openOriginDateInput(compose: ComposeContentTestRule, beforeInput: () -> Unit = {}): SemanticsNodeInteraction {
+    if (compose.onAllNodesWithContentDescription("Choose origin date").fetchSemanticsNodes().isEmpty()) {
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Choose origin date"))
+    }
     compose.onNodeWithContentDescription("Choose origin date").performScrollTo().performClick()
     beforeInput()
     compose.onNodeWithText("Enter date").performScrollTo().performClick()

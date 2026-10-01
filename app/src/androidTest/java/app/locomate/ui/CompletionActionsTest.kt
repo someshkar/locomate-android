@@ -38,6 +38,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +46,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CompletionActionsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
     @Test fun searchPageKeepsNavigationAboveKeyboardAndOpensTheSelectedDate() {
@@ -72,12 +74,14 @@ class CompletionActionsTest {
             val field = compose.onNodeWithText("Train no. or station").performScrollTo()
             field.performClick().performTextInput("12951")
             compose.waitUntil(5_000) { keyboardHeight() > 0 }
+            screenshot("search-keyboard")
             for (label in listOf("Journeys", "Explore", "Passport", "Search trains")) {
                 val dock = compose.onNodeWithContentDescription(label).assertIsDisplayed()
-                assertTrue("Navigation is covered by keyboard", dock.fetchSemanticsNode().boundsInRoot.bottom
-                    <= compose.activity.window.decorView.height - keyboardHeight())
+                val bottom = dock.fetchSemanticsNode().boundsInRoot.bottom
+                val decorHeight = compose.activity.window.decorView.height
+                assertTrue("Navigation is covered by keyboard: $label bottom=$bottom decor=$decorHeight IME=${keyboardHeight()}",
+                    bottom <= decorHeight - keyboardHeight())
             }
-            screenshot("search-keyboard")
             field.performImeAction()
             compose.waitUntil(5_000) { keyboardHeight() == 0 }
             compose.onNodeWithContentDescription("Yest").performScrollTo().performClick().assertIsSelected()

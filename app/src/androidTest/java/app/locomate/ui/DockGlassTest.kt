@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import app.locomate.ui.theme.LocomateTheme
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -35,6 +36,7 @@ import kotlin.math.roundToInt
 /** Painted pixels, rather than effect configuration, prove the dock samples the changing page. */
 class DockGlassTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @Test fun dockReplaysChangedContentAndRepositionsAtLargeTextWithoutDuplicatingActions() {
         var color by mutableStateOf(Color.Red)
@@ -94,6 +96,7 @@ class DockGlassTest {
         } > 10)
         compose.runOnIdle { phase = 0.5f }
         val after = lowerScan(dockImage())
+        screenshot("light-lens-detail-after")
         assertTrue("The lens kept stale page drawing commands", scan.zip(after).count {
             kotlin.math.abs(red(it.first) - red(it.second)) > 35
         } > scan.size / 4)
@@ -101,11 +104,16 @@ class DockGlassTest {
     }
 
     private fun assertPaintedChannel(channel: Int) {
-        compose.waitUntil(5_000) {
-            val bitmap = dockImage()
-            val pixel = bitmap.getPixel(bitmap.width / 2, (bitmap.height * 0.8f).roundToInt())
-            val channels = listOf(red(pixel), green(pixel), blue(pixel))
-            channels[channel] > 120 && channels.filterIndexed { index, _ -> index != channel }.all { it < 55 }
+        try {
+            compose.waitUntil(5_000) {
+                val bitmap = dockImage()
+                val pixel = bitmap.getPixel(bitmap.width / 2, (bitmap.height * 0.8f).roundToInt())
+                val channels = listOf(red(pixel), green(pixel), blue(pixel))
+                channels[channel] > 120 && channels.filterIndexed { index, _ -> index != channel }.all { it < 55 }
+            }
+        } catch (failure: Throwable) {
+            screenshot("wrong-channel-$channel")
+            throw failure
         }
     }
 

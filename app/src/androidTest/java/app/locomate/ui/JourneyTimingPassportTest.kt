@@ -35,6 +35,7 @@ import app.locomate.data.SavedJourney
 import app.locomate.ui.theme.LocomateTheme
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,6 +44,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class JourneyTimingPassportTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @Test fun journeySummaryKeepsClocksAndSaveAboveTheDockAtNormalText() {
         val route = PreviewRoutes.load(compose.activity).first()

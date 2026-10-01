@@ -44,6 +44,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,6 +53,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class TrainReliabilityCardTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
 
     @Test fun historyKeepsOnlyCurrentTrainAndSourceWithTruthfulRetryAndZeroSampleAt200Percent() {
         HistoryGateway(holdFirstTrain = true).use { first ->

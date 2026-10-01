@@ -1,6 +1,5 @@
 package app.locomate.data
 
-import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -24,7 +23,7 @@ class JourneyStatusNotificationTest {
     fun deletionGateIgnoresLateFcmRegistration() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         val card = JourneyStatusNotification(context)
         val preferences = context.getSharedPreferences(StatusPushWork.preferenceName, Context.MODE_PRIVATE)
         val route = productionRoute(context)
@@ -45,7 +44,7 @@ class JourneyStatusNotificationTest {
     fun pushUpdatesOnlyTheEnabledRunAndEndRemovesItsCard() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         val card = JourneyStatusNotification(context)
         val route = productionRoute(context)
         val runId = requireNotNull(route.runId)
@@ -85,7 +84,7 @@ class JourneyStatusNotificationTest {
     fun refreshCannotChangeRunsOrRestartACanceledCard() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         val route = productionRoute(context)
         val card = JourneyStatusNotification(context)
         card.cancel()
@@ -113,7 +112,7 @@ class JourneyStatusNotificationTest {
     fun expiredStoredRunCannotBeRefreshedEvenBeforeAndroidRemovesItsNotification() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         var now = System.currentTimeMillis()
         val route = productionRoute(context)
         val card = JourneyStatusNotification(context) { now }
@@ -142,7 +141,7 @@ class JourneyStatusNotificationTest {
     fun refreshRejectsANotificationFromAnotherGatewayScopeOrRun() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         val route = productionRoute(context)
         val card = JourneyStatusNotification(context)
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -151,9 +150,20 @@ class JourneyStatusNotificationTest {
             listOf("gatewayScope" to "other-gateway", "runId" to "12951:2026-10-02").forEach { (key, value) ->
                 assertTrue(card.enable(route))
                 val active = manager.activeNotifications.single { it.id == 1001 && it.tag == null }
-                val foreign = Notification.Builder.recoverBuilder(context, active.notification)
-                    .addExtras(android.os.Bundle().apply { putString(key, value) }).build()
+                val foreign = Notification.Builder(context, active.notification.channelId)
+                    .setSmallIcon(active.notification.smallIcon)
+                    .setContentTitle("Foreign journey")
+                    .setExtras(android.os.Bundle(active.notification.extras).apply { putString(key, value) })
+                    .build()
                 manager.notify(1001, foreign)
+                val deadline = android.os.SystemClock.uptimeMillis() + 2_000
+                while (manager.activeNotifications.firstOrNull { it.id == 1001 && it.tag == null }
+                        ?.notification?.extras?.getString(key) != value &&
+                    android.os.SystemClock.uptimeMillis() < deadline) {
+                    Thread.sleep(20)
+                }
+                assertEquals(value, manager.activeNotifications.single { it.id == 1001 && it.tag == null }
+                    .notification.extras.getString(key))
                 assertFalse(JourneyStatusNotification(context).refresh(route))
                 assertNull(card.activeRun())
                 assertTrue(manager.activeNotifications.none { it.id == 1001 && it.tag == null })
@@ -167,7 +177,7 @@ class JourneyStatusNotificationTest {
     fun retainedRouteAgeLimitsEnablementAndRefreshTimeout() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         var now = System.currentTimeMillis()
         val route = productionRoute(context).copy(receivedAtMillis = now)
         val card = JourneyStatusNotification(context) { now }
@@ -179,6 +189,12 @@ class JourneyStatusNotificationTest {
             assertTrue(card.enable(route))
             now += 9 * 60_000L
             assertTrue(card.refresh(route))
+            val refreshedDeadline = android.os.SystemClock.uptimeMillis() + 2_000
+            while (manager.activeNotifications.single { it.id == 1001 && it.tag == null }
+                    .notification.timeoutAfter != 60_000L &&
+                android.os.SystemClock.uptimeMillis() < refreshedDeadline) {
+                Thread.sleep(20)
+            }
             assertEquals(60_000L, manager.activeNotifications.single { it.id == 1001 && it.tag == null }
                 .notification.timeoutAfter)
 
@@ -198,7 +214,7 @@ class JourneyStatusNotificationTest {
     fun statusCardTapKeepsTheExactServiceDateWhenAnotherRunIsEnabled() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         val route = productionRoute(context)
         val card = JourneyStatusNotification(context)
         card.cancel()

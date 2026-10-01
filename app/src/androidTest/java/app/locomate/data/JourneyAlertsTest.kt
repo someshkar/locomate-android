@@ -1,6 +1,5 @@
 package app.locomate.data
 
-import android.Manifest
 import android.app.NotificationManager
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -51,8 +50,7 @@ class JourneyAlertsTest {
     }
 
     @Test fun notificationIsOrdinaryDeduplicatedAndStopsOnWithdrawal() {
-        InstrumentationRegistry.getInstrumentation().uiAutomation
-            .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationPermissionIfNeeded(context)
         val origin = "https://alert-notification-test.example"
         val store = JourneyAlertStore(context, origin)
         val notifications = JourneyAlertsNotification(context, origin)

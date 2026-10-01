@@ -29,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
@@ -55,6 +56,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.ClassRule
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,6 +71,7 @@ import android.os.SystemClock
 @RunWith(AndroidJUnit4::class)
 class CoreAccessibilityTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
     companion object {
         // One system change before all Activity launches avoids rapid configuration-update races.
         // Android Dialogs create their density from this setting, unlike local Compose overrides.
@@ -213,8 +216,10 @@ class CoreAccessibilityTest {
         field.performImeAction()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
         compose.onNodeWithText(train.name).performScrollTo().performClick()
-        field.performScrollTo().performTextReplacement("")
-        field.performImeAction()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Train no. or station"))
+        val restoredField = compose.onNodeWithText("Train no. or station")
+        restoredField.performTextReplacement("")
+        restoredField.performImeAction()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
         compose.onNodeWithText(train.name).assertIsDisplayed().tryPerformAccessibilityChecks()
         assertVisibleTextFits()
@@ -301,6 +306,7 @@ class CoreAccessibilityTest {
         assertVisibleTextFits()
         field.performImeAction()
         compose.waitUntil(15_000) { glass.snapshot != null }
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(train.name))
         val result = compose.onNodeWithText(train.name, useUnmergedTree = true)
             .performScrollTo().assertIsDisplayed().tryPerformAccessibilityChecks()
         val layouts = mutableListOf<TextLayoutResult>()

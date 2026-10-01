@@ -837,6 +837,7 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
                 .drawWithContent {
                     pageLayer.record { this@drawWithContent.drawContent() }
                     drawLayer(pageLayer)
+                    backdrop.pageDrawn()
                 }) { content(dockInset) }
             CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
                 modifier = Modifier.align(Alignment.BottomCenter)

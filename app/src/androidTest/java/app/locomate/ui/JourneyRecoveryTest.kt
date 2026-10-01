@@ -1,6 +1,5 @@
 package app.locomate.ui
 
-import android.Manifest
 import android.net.Uri
 import android.graphics.Bitmap
 import java.io.File
@@ -34,6 +33,7 @@ import app.locomate.data.CurrentJourneyStore
 import app.locomate.data.JourneyAlertLink
 import app.locomate.data.JourneyAlertStore
 import app.locomate.data.JourneyStatusNotification
+import app.locomate.data.grantNotificationPermissionIfNeeded
 import app.locomate.data.RailGateway
 import app.locomate.ui.theme.LocomateTheme
 import java.net.InetAddress
@@ -43,6 +43,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +52,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class JourneyRecoveryTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
     private var launchRevision by mutableIntStateOf(0)
 
     @Test fun betweenStationsUsesBoardingDateToOpenTheDerivedOriginRun() {
@@ -68,7 +70,7 @@ class JourneyRecoveryTest {
                 compose.onNodeWithContentDescription("Choose Mumbai Central, MMCT").performClick()
                 compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Find trains between stations"))
                 compose.onNodeWithContentDescription("Find trains between stations").performClick()
-                awaitText("Recovery Express")
+                awaitTrainResult()
                 compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Recovery Express"))
                 compose.onNodeWithText("RailRadar route timetable").assertIsDisplayed()
                 captureRecent("route-between-normal")
@@ -105,7 +107,7 @@ class JourneyRecoveryTest {
                 compose.onNodeWithContentDescription(shortcut).performClick()
                 awaitText("Station timetable temporarily unavailable")
                 compose.onNodeWithText("Try again").performScrollTo().performClick()
-                awaitText("Recovery Express")
+                awaitTrainResult()
                 chooseOriginDate(compose, "2019-02-15")
                 compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Recovery Express"))
                 val row = compose.onNodeWithText("Recovery Express").performScrollTo().assertIsDisplayed()
@@ -126,7 +128,7 @@ class JourneyRecoveryTest {
                 compose.onNodeWithText("No matching trains found.").assertDoesNotExist()
                 captureRecent("station-lookup-normal")
                 compose.onNodeWithContentDescription(shortcut).performClick()
-                awaitText("Recovery Express")
+                awaitTrainResult()
                 compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("Clear search"))
                 compose.onNodeWithContentDescription("Clear search").performScrollTo().performClick()
                 field.performScrollTo().performTextReplacement("Obsolete"); field.performImeAction()
@@ -153,7 +155,7 @@ class JourneyRecoveryTest {
                 compose.onNodeWithContentDescription("Search trains").performClick()
                 compose.onNodeWithText("Train no. or station").performTextInput("12951")
                 chooseOriginDate(compose, "2026-10-01")
-                awaitText("Recovery Express")
+                awaitTrainResult()
                 compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
                 awaitText("SCHEDULED · NO LIVE ETA")
                 compose.activityRule.scenario.recreate()
@@ -193,7 +195,7 @@ class JourneyRecoveryTest {
                 compose.onNodeWithContentDescription("Search trains").performClick()
                 compose.onNodeWithText("Train no. or station").performTextInput("12951")
                 chooseOriginDate(compose, "2026-10-01")
-                awaitText("Recovery Express")
+                awaitTrainResult()
                 compose.onNodeWithText("Recovery Express").performScrollTo().performClick()
                 awaitText("SCHEDULED · NO LIVE ETA")
                 assertEquals(JourneyAlertLink("12951", "2026-10-01"), store.read())
@@ -246,8 +248,7 @@ class JourneyRecoveryTest {
             val store = CurrentJourneyStore(compose.activity, server.url)
             val card = JourneyStatusNotification(compose.activity)
             val reference = JourneyAlertLink("12951", "2026-10-01")
-            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
-                compose.activity.packageName, Manifest.permission.POST_NOTIFICATIONS)
+            grantNotificationPermissionIfNeeded(compose.activity)
             store.clear()
             card.cancel()
             try {
@@ -357,8 +358,22 @@ class JourneyRecoveryTest {
     }
 
     private fun awaitText(text: String) {
+        try {
+            compose.waitUntil(15_000) {
+                compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() ||
+                    runCatching { compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text)) }.isSuccess
+            }
+        } catch (failure: Throwable) {
+            captureRecent("missing-${text.take(12).replace(Regex("[^A-Za-z0-9-]"), "-")}")
+            throw failure
+        }
+    }
+
+    private fun awaitTrainResult() {
         compose.waitUntil(15_000) {
-            compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+            runCatching {
+                compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Recovery Express"))
+            }.isSuccess
         }
     }
 
