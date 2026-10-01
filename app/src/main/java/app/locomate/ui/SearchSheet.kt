@@ -1,12 +1,13 @@
 package app.locomate.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +33,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -82,16 +86,22 @@ fun SearchSheet(
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize(), color = Color(0xFF101116)) {
+        Box(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxWidth().fillMaxHeight(0.72f).align(Alignment.BottomCenter),
+            color = LM.Glass, shape = RoundedCornerShape(topStart = LM.RadiusSheet, topEnd = LM.RadiusSheet)) {
             Column(Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState())) {
-                Spacer(Modifier.height(65.dp))
+                Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = 40.dp, height = 5.dp).clip(RoundedCornerShape(3.dp))
+                        .background(LM.Ink3.copy(alpha = 0.55f)))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Where to?", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = LM.Ink, modifier = Modifier.weight(1f))
+                    Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = LM.Ink, modifier = Modifier.weight(1f))
                     IconButton(onClick = onClose) {
                         Icon(Icons.Outlined.Close, contentDescription = "Close search", tint = LM.Ink)
                     }
                 }
-                Spacer(Modifier.height(22.dp))
+                Text("Find trains by name or number", color = LM.Ink2, fontSize = 13.sp)
+                Spacer(Modifier.height(18.dp))
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -99,6 +109,12 @@ fun SearchSheet(
                     placeholder = { Text("Train name or number", color = LM.Ink3) },
                     singleLine = true,
                     shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = LM.Raised,
+                        unfocusedContainerColor = LM.Raised,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (gateway.configured) {
@@ -111,6 +127,14 @@ fun SearchSheet(
                         isError = runCatching { LocalDate.parse(date) }.isFailure,
                         singleLine = true,
                         shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = LM.Raised,
+                            unfocusedContainerColor = LM.Raised,
+                            errorContainerColor = LM.Raised,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            errorBorderColor = LM.Error,
+                        ),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -132,7 +156,7 @@ fun SearchSheet(
                 }
                 if (gateway.configured) liveResults.forEach { train ->
                     Surface(
-                        color = Color(0xFF1A1C22),
+                        color = LM.Elevated,
                         shape = RoundedCornerShape(22.dp),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(
                             enabled = runCatching { LocalDate.parse(date) }.isSuccess
@@ -153,9 +177,8 @@ fun SearchSheet(
                 }
                 if (!gateway.configured) results.forEach { train ->
                     Surface(
-                        color = Color(0xFF1A1C22),
+                        color = LM.Elevated,
                         shape = RoundedCornerShape(22.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onSelect(train.trainNumber) }
                     ) {
                         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -169,6 +192,7 @@ fun SearchSheet(
                     }
                 }
             }
+        }
         }
     }
 }

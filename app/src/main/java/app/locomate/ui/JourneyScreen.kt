@@ -159,7 +159,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             }
                         }
                     }
-                    Spacer(Modifier.height(25.dp))
+                    Spacer(Modifier.height(18.dp))
                 }
 
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
@@ -187,25 +187,29 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     } else {
                     Surface(color = LM.Elevated, shape = RoundedCornerShape(LM.RadiusCard),
                         modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp)) {
+                    Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (route == null) "No journey selected" else "${route.trainNumber} · ${route.displayName}",
                             color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(route?.statusLabel ?: "SEARCH TO START", color = if (route?.isPreview == true) Color(0xFFBCA7FF) else LM.Accent,
                             fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
-                    Spacer(Modifier.height(18.dp))
-                    Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(message ?: route?.sourceDetail ?: "Search for a dated train run to see its status.", color = LM.Ink3, fontSize = 13.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 21.sp,
+                        fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(3.dp))
+                    Text(if (route.isPreview) "Historical timetable · no live ETA"
+                        else message ?: route.sourceDetail, color = LM.Ink3, fontSize = 13.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     route?.etaBand?.let { band ->
                         Spacer(Modifier.height(8.dp))
                         Text(band, color = if (route.statusLabel.startsWith("STALE")) Color(0xFFC7A377) else LM.Accent,
                             fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
-                    Spacer(Modifier.height(27.dp))
+                    Spacer(Modifier.height(16.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(LM.Hairline))
-                    Spacer(Modifier.height(21.dp))
+                    Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         StationTime(boarding?.code ?: route?.originCode ?: "—",
                             if (fullRoute) route?.departure ?: "—" else boarding?.scheduledDeparture ?: boarding?.scheduledArrival ?: "—",
