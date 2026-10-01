@@ -24,8 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -75,14 +73,14 @@ object CommunitySession {
 /** User-initiated location foreground service; no location starts from a background launch. */
 class CommunityLocationService : Service(), LocationListener {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val uploadLock = Mutex()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var locationManager: LocationManager
     private lateinit var preferences: CommunityPreferences
     private lateinit var queue: CommunityQueue
     private lateinit var gateway: RailGateway
     private lateinit var sync: CommunitySync
-    private var active: ActiveCommunityRun? = null
+    private lateinit var uploads: CommunityUploadRetry
+    @Volatile private var active: ActiveCommunityRun? = null
     private var expiry: Runnable? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -94,6 +92,13 @@ class CommunityLocationService : Service(), LocationListener {
         queue = CommunityQueue(this)
         gateway = RailGateway(this)
         sync = CommunitySync(queue, gateway, preferences)
+        uploads = CommunityUploadRetry(scope, canUpload = {
+            val run = active
+            run != null && preferences.enabled && gateway.configured &&
+                run.stopAt > System.currentTimeMillis() &&
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+                CommunitySession.read(this)?.runId == run.runId
+        }, upload = { sync.flushObservations() }, onInactive = { stopSelf() })
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -131,7 +136,7 @@ class CommunityLocationService : Service(), LocationListener {
         expiry = Runnable { stopSelf() }.also { handler.postDelayed(it,
             (run.stopAt - System.currentTimeMillis()).coerceAtLeast(0)) }
         scope.launch { runCatching { sync.flushWithdrawals() } }
-        scope.launch { uploadLock.withLock { runCatching { sync.flushObservations() } } }
+        uploads.start()
         return START_NOT_STICKY
     }
 
@@ -146,7 +151,7 @@ class CommunityLocationService : Service(), LocationListener {
             try {
                 if (CommunitySession.read(this@CommunityLocationService)?.runId != run.runId) return@launch
                 if (queue.appendIfAuthorized(observation, preferences)) {
-                    uploadLock.withLock { runCatching { sync.flushObservations() } }
+                    uploads.request()
                 }
             } catch (_: Exception) {
                 // A failed private write never sends this fix. Later fixes can retry.
