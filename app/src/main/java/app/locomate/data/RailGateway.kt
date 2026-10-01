@@ -13,6 +13,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.io.File
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -199,6 +200,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             sourceDetail = source,
             etaBand = if (expected != null && lower != null && upper != null)
                 "${if (cachedAt != null) "Last forecast · " else ""}P10 ${railTime(lower)} · P50 ${railTime(expected)} · P90 ${railTime(upper)}" else null,
+            departureInstantMillis = instantMillis(journey.getString("departureTime")),
+            arrivalInstantMillis = instantMillis(journey.getString("scheduledArrival")),
         )
     }
 
@@ -298,6 +301,10 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                     .format(Instant.parse(value))
             }.getOrDefault(value)
         }
+
+        private fun instantMillis(value: String): Long? = runCatching {
+            OffsetDateTime.parse(value).toInstant().toEpochMilli()
+        }.getOrNull()
 
         private fun dayOffset(departure: String, arrival: String): Int = runCatching {
             val zone = ZoneId.of("Asia/Kolkata")

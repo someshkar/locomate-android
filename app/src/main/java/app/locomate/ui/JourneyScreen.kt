@@ -27,7 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,7 +61,8 @@ import kotlin.math.roundToInt
 
 @Composable
 fun JourneyScreen(route: RoutePreview?, saved: Boolean, productionMode: Boolean = false,
-                  message: String? = null, onSave: () -> Unit) {
+                  message: String? = null, onSave: () -> Unit,
+                  onCalendar: () -> Unit = {}, onShare: () -> Unit = {}) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
         RailMap(route)
         Box(
@@ -179,6 +182,34 @@ fun JourneyScreen(route: RoutePreview?, saved: Boolean, productionMode: Boolean 
                         }
                     }
                     Spacer(Modifier.height(18.dp))
+                    if (route != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (!route.isPreview && route.departureInstantMillis != null && route.arrivalInstantMillis != null) {
+                                Surface(onClick = onCalendar,
+                                    color = Color(0xFF242832), shape = RoundedCornerShape(18.dp),
+                                    modifier = Modifier.weight(1f)) {
+                                    Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+                                        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = LM.Accent,
+                                            modifier = Modifier.size(18.dp))
+                                        Text("Calendar", color = LM.Ink, fontSize = 13.sp,
+                                            modifier = Modifier.padding(start = 7.dp))
+                                    }
+                                }
+                            }
+                            Surface(onClick = onShare, color = Color(0xFF242832),
+                                shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f)) {
+                                Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.Share, contentDescription = null, tint = LM.Accent,
+                                        modifier = Modifier.size(18.dp))
+                                    Text("Share", color = LM.Ink, fontSize = 13.sp,
+                                        modifier = Modifier.padding(start = 7.dp))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(23.dp))
+                    }
                     Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(12.dp))
                     route?.calls.orEmpty().forEachIndexed { index, stop ->

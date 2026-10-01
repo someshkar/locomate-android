@@ -42,6 +42,8 @@ data class RoutePreview(
     val statusLabel: String = "PREVIEW · NOT LIVE",
     val sourceDetail: String = "Historical timetable sample. No live position or ETA.",
     val etaBand: String? = null,
+    val departureInstantMillis: Long? = null,
+    val arrivalInstantMillis: Long? = null,
 ) {
     val displayName: String get() = if ("Rajdhani" in name && '-' in name) {
         "${name.substringBefore('-').removeSuffix(" Central")} Rajdhani"

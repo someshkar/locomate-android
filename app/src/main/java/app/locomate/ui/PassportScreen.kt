@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,8 +36,8 @@ import app.locomate.data.PassportMetrics
 import app.locomate.ui.theme.LM
 
 @Composable
-fun PassportScreen(savedRoutes: List<SavedJourney>, onRemove: (String) -> Unit,
-                   onOpen: (SavedJourney) -> Unit) {
+fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRemove: (String) -> Unit,
+                   onOpen: (SavedJourney) -> Unit, onSettings: () -> Unit) {
     val savedRuns = savedRoutes.filterNot { it.preview }
     val metrics = PassportMetrics.from(savedRoutes)
     Column(
@@ -45,9 +46,19 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, onRemove: (String) -> Unit,
         ).statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
     ) {
         Spacer(Modifier.height(30.dp))
-        Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f))
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Outlined.Settings, contentDescription = "Open settings", tint = LM.Ink)
+            }
+        }
         Spacer(Modifier.height(8.dp))
         Text("Your saved rail runs, kept privately on this device.", color = LM.Ink2, fontSize = 15.sp, lineHeight = 21.sp)
+        if (notice != null) {
+            Spacer(Modifier.height(13.dp))
+            Text(notice, color = Color(0xFFFFB84D), fontSize = 13.sp, lineHeight = 19.sp)
+        }
         Spacer(Modifier.height(29.dp))
         Surface(
             color = Color(0xFF272235),

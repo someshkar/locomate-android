@@ -1,6 +1,6 @@
 # Locomate for Android
 
-Native Kotlin and Jetpack Compose railway journey app. MapLibre renders an interactive dark rail map. The four primary surfaces are Journeys, Search, Explore, and Passport, with a draggable journey sheet and floating navigation.
+Native Kotlin and Jetpack Compose railway journey app. MapLibre renders an interactive dark rail map. The primary surfaces are Journeys, Search, Explore, Passport, and Passport settings, with a draggable journey sheet and floating navigation.
 
 ## Build and test
 
@@ -26,5 +26,7 @@ The client obtains a short-lived device session from the gateway and sends no pr
 Passport stores a local summary of a saved run, without PNR, seat, or personal location. Historical previews are listed separately and excluded from saved-run distance. Missing route distance remains unavailable rather than being reported as zero.
 
 The journey timeline displays scheduled, observed, predicted, and stale stop times with explicit source labels. Available stop forecasts show their P10/P50/P90 band and fallback reason.
+
+Dated journeys can be shared through Android's native share sheet or inserted into a calendar with scheduled departure and arrival times. Preview journeys can be shared with their preview label but cannot be added to a calendar.
 
 This repository is still under active implementation. Android notifications, background contribution, accessibility review, and performance profiling remain to be completed and verified.

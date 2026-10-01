@@ -1,5 +1,8 @@
 package app.locomate.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.CalendarContract
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -65,10 +68,12 @@ fun RootView() {
     val routes = remember { PreviewRoutes.load(context) }
     var tab by rememberSaveable { mutableStateOf(Tab.Journeys) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var selectedNumber by rememberSaveable { mutableStateOf("12951") }
     var liveRoute by remember { mutableStateOf<RoutePreview?>(null) }
     var selectedPreview by remember { mutableStateOf<RoutePreview?>(null) }
     var journeyMessage by remember { mutableStateOf<String?>(null) }
+    var passportNotice by remember { mutableStateOf<String?>(null) }
     var savedJourneys by remember { mutableStateOf(passport.load()) }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
@@ -103,8 +108,10 @@ fun RootView() {
         }
     }
 
-    BackHandler(enabled = searchOpen || tab != Tab.Journeys) {
-        if (searchOpen) searchOpen = false else tab = Tab.Journeys
+    BackHandler(enabled = searchOpen || settingsOpen || tab != Tab.Journeys) {
+        if (searchOpen) searchOpen = false
+        else if (settingsOpen) settingsOpen = false
+        else tab = Tab.Journeys
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -115,6 +122,35 @@ fun RootView() {
                     productionMode = gateway.configured && selectedPreview == null,
                     saved = selectedRoute?.let { SavedJourney.from(it).key in savedJourneys.map(SavedJourney::key) } ?: false,
                     message = journeyMessage,
+                    onCalendar = {
+                        selectedRoute?.let { route ->
+                            val start = route.departureInstantMillis
+                            val end = route.arrivalInstantMillis
+                            if (!route.isPreview && start != null && end != null) {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_INSERT).apply {
+                                        data = CalendarContract.Events.CONTENT_URI
+                                        putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
+                                        putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end)
+                                        putExtra(CalendarContract.Events.TITLE, "${route.trainNumber} · ${route.displayName}")
+                                        putExtra(CalendarContract.Events.EVENT_LOCATION,
+                                            "${route.originName} → ${route.destinationName}")
+                                        putExtra(CalendarContract.Events.DESCRIPTION,
+                                            "Scheduled rail journey · ${route.statusLabel}. Check current railway information before travel.")
+                                    })
+                                }.onFailure { journeyMessage = "No calendar app is available on this device." }
+                            }
+                        }
+                    },
+                    onShare = {
+                        selectedRoute?.let { route ->
+                            val text = "${route.trainNumber} · ${route.displayName}\n${route.routeLabel}\n${route.originCode} ${route.departure} → ${route.destinationCode} ${route.arrival}\n${route.statusLabel}. ${route.sourceDetail}"
+                            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }, "Share journey"))
+                        }
+                    },
                     onSave = {
                         selectedRoute?.let { route ->
                             val entry = SavedJourney.from(route)
@@ -125,15 +161,30 @@ fun RootView() {
                     }
                 )
                 Tab.Explore -> ExploreScreen(selectedRoute, gateway)
-                Tab.Passport -> PassportScreen(
+                Tab.Passport -> if (settingsOpen) SettingsScreen(
+                    productionMode = gateway.configured,
+                    savedCount = savedJourneys.size,
+                    onBack = { settingsOpen = false },
+                    onOfficialRailway = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://enquiry.indianrail.gov.in/mntes/")))
+                    }
+                ) else PassportScreen(
                     savedRoutes = savedJourneys,
+                    notice = passportNotice,
+                    onSettings = { settingsOpen = true },
                     onRemove = { key -> updateSaved(savedJourneys.filterNot { it.key == key }) },
                     onOpen = { saved ->
-                        tab = Tab.Journeys
-                        if (saved.preview) {
+                        if (!saved.preview && !gateway.configured) {
+                            passportNotice = "A rail gateway is needed to reopen this dated run. Your saved summary is still on this device."
+                        } else if (saved.preview) {
+                            passportNotice = null
+                            tab = Tab.Journeys
                             selectedNumber = saved.trainNumber
                             selectedPreview = routes.firstOrNull { it.trainNumber == saved.trainNumber }
                         } else if (!saved.preview && gateway.configured && saved.originDate != null) {
+                            passportNotice = null
+                            tab = Tab.Journeys
                             selectedPreview = null
                             liveRoute = null
                             journeyMessage = "Loading ${saved.trainNumber} for ${saved.originDate}…"
@@ -152,7 +203,7 @@ fun RootView() {
         }
         CapsuleNavBar(
             tab = tab,
-            onTab = { tab = it },
+            onTab = { tab = it; settingsOpen = false },
             onSearch = { searchOpen = true },
             modifier = Modifier.align(Alignment.BottomCenter)
                 .navigationBarsPadding()

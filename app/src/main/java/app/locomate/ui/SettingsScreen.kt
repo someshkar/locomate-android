@@ -1,0 +1,107 @@
+package app.locomate.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.locomate.ui.theme.LM
+
+@Composable
+fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
+                   onOfficialRailway: () -> Unit) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF090A0D)).statusBarsPadding()
+        .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
+        Spacer(Modifier.height(23.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Outlined.ArrowBack, contentDescription = "Back to Passport", tint = LM.Ink)
+            }
+            Text("Settings", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 8.dp))
+        }
+        Spacer(Modifier.height(5.dp))
+        Text("Rail data, privacy and source labels", color = LM.Ink2, fontSize = 14.sp)
+        Spacer(Modifier.height(30.dp))
+        SettingsCard("RAIL DATA SOURCE") {
+            Text(if (productionMode) "Gateway configured" else "Historical route preview",
+                color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Text(if (productionMode)
+                "Dated runs and network trains come from the rail gateway. Each screen labels scheduled, observed, predicted and stale information."
+                else "Preview routes come from a historical timetable snapshot. They are never presented as live positions or current ETAs.",
+                color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+        Spacer(Modifier.height(14.dp))
+        SettingsCard("ON THIS DEVICE") {
+            Text("$savedCount saved journey${if (savedCount == 1) "" else "s"}",
+                color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Text("Passport is stored locally. It contains train and station summaries, without PNR, seat, or personal location. Remove a journey from Passport at any time.",
+                color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+        Spacer(Modifier.height(14.dp))
+        SettingsCard("HOW TO READ STATUS") {
+            StatusLegend("OBSERVED", "A recorded train event", Color(0xFF37C982))
+            StatusLegend("PREDICTED", "A forecast, shown with its available range", Color(0xFFFFB84D))
+            StatusLegend("SCHEDULED", "A published timetable time", LM.Ink2)
+            StatusLegend("STALE", "Last saved data while refresh is unavailable", Color(0xFFFFB84D))
+            StatusLegend("PREVIEW", "Historical sample, never live", Color(0xFFBCA7FF))
+        }
+        Spacer(Modifier.height(25.dp))
+        Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFF162B3D),
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onOfficialRailway)) {
+            Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Open official NTES", color = LM.Ink, fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Icon(Icons.Outlined.OpenInNew, contentDescription = null, tint = LM.Accent)
+            }
+        }
+        Spacer(Modifier.height(140.dp))
+    }
+}
+
+@Composable
+private fun SettingsCard(label: String, content: @Composable () -> Unit) {
+    Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFF191B21),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp)) {
+            Text(label, color = LM.Ink3, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp)
+            Spacer(Modifier.height(13.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun StatusLegend(label: String, detail: String, color: Color) {
+    Column(Modifier.padding(vertical = 6.dp)) {
+        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text(detail, color = LM.Ink2, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+    }
+}
