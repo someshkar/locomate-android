@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URI
 
 plugins {
     id("com.android.application")
@@ -17,6 +18,13 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val mapStyleUrl = providers.gradleProperty("LOCOMATE_MAP_STYLE_URL").orNull
+            ?: "https://tiles.openfreemap.org/styles/dark"
+        val mapStyleUri = URI(mapStyleUrl)
+        require(mapStyleUri.scheme == "https" && !mapStyleUri.host.isNullOrBlank() && mapStyleUri.userInfo == null) {
+            "LOCOMATE_MAP_STYLE_URL must be an HTTPS MapLibre style URL without embedded user credentials."
+        }
+        buildConfigField("String", "MAP_STYLE_URL", "\"${mapStyleUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         buildConfigField("String", "FCM_PROJECT_ID", "\"${providers.gradleProperty("LOCOMATE_FCM_PROJECT_ID").orNull.orEmpty()}\"")
         buildConfigField("String", "FCM_APP_ID", "\"${providers.gradleProperty("LOCOMATE_FCM_APP_ID").orNull.orEmpty()}\"")
         buildConfigField("String", "FCM_API_KEY", "\"${providers.gradleProperty("LOCOMATE_FCM_API_KEY").orNull.orEmpty()}\"")

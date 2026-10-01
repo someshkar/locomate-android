@@ -6,6 +6,8 @@ The Doop design's Android typography uses bundled Space Grotesk for the interfac
 
 The [Doop canvas](https://doop.design/c/ha6YK6QvsY) is the visual reference. Its dark palette uses `#060708` ground, `#009DFA` signal blue, and `#5FAEF5` route blue. The Journey sheet has 28dp top corners; Android uses a stronger dark scrim because the MapLibre view behind it is not blurred. The current map uses dark vector tiles, while the Journey frame depicts satellite imagery.
 
+`LOCOMATE_MAP_STYLE_URL` can select an HTTPS MapLibre style from a licensed satellite/hybrid provider for both Journey and Explore. Put this in local Gradle properties or pass `-PLOCOMATE_MAP_STYLE_URL=...` when building. The default is OpenFreeMap's dark vector style; no satellite provider configuration was supplied, so satellite parity is still unverified. Style URLs are bundled in the APK: use only client-safe provider tokens with appropriate restrictions. MapLibre's actual source credits remain available through Map attribution.
+
 ## Build and test
 
 Requirements: JDK 17, Android SDK 36, and an Android 12 (API 31) or newer device or emulator. The Gradle wrapper is included.
@@ -38,6 +40,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 GitHub Actions runs the unit tests and APK build for each pull request. The Android adaptive icon and themed monochrome icon use the same route-shaped L as iOS.
+
+On 2026-10-01, the completion fixes passed all **53 unit tests**, Debug and Release builds, and **four focused emulator tests**: a canceled real HTTP search cannot leave loading or stale result actions behind; undated/invalid Passport entries explain their disabled open action while removal remains usable; a dated run restores from cache after Activity recreation; and platform boxes stay readable at normal and 200% Compose font scale, hide in preview/unknown states, and qualify cached values as last known. Dated sharing includes the origin date and canonical journey link; preview sharing stays explicitly historical and link-free. These focused checks do not establish a full accessibility or physical-device release pass.
 
 The separate Macrobenchmark module measures ten cold launches, ten Search-sheet open/close interactions, and ten Journey-sheet drag/scroll cycles over the map. It builds a locally signed, non-debuggable app variant and captures startup, frame, and (for Journey) peak app-memory metrics. Run it on an Android 12 or newer **physical device** with a stable refresh rate. Supply a real dated run available from the configured HTTPS gateway:
 

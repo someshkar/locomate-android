@@ -85,6 +85,8 @@ import app.locomate.data.RailGateway
 import app.locomate.data.RoutePreview
 import app.locomate.data.SavedJourney
 import app.locomate.data.SavedJourneyStore
+import app.locomate.data.journeyShareText
+import app.locomate.data.openUnavailableReason
 import app.locomate.data.StatusPushWork
 import app.locomate.data.JourneyAlertChannel
 import app.locomate.data.JourneyAlertQuietHours
@@ -537,9 +539,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                     },
                     onShare = {
                         selectedRoute?.let { route ->
-                            val board = route.calls.firstOrNull { it.code == selectedPlan?.boardingCode }
-                            val leave = route.calls.firstOrNull { it.code == selectedPlan?.alightingCode }
-                            val text = "${route.trainNumber} · ${route.displayName}\n${board?.name ?: route.originName} → ${leave?.name ?: route.destinationName}\n${route.statusLabel}. ${route.sourceDetail}"
+                            val text = journeyShareText(route, selectedPlan)
                             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, text)
@@ -697,6 +697,10 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                         haptics.performHapticFeedback(HapticFeedbackType.ToggleOff)
                     },
                     onOpen = { saved ->
+                        saved.openUnavailableReason()?.let { reason ->
+                            passportNotice = reason
+                            return@PassportScreen
+                        }
                         if (!saved.preview && gateway.configured && saved.originDate != null) {
                             val reference = JourneyAlertLink.fromRunId("${saved.trainNumber}:${saved.originDate}")
                             if (reference == null || !rememberCurrentRun(reference)) return@PassportScreen

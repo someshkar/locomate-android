@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -396,7 +397,11 @@ private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, first: Boolean) {
+internal fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, first: Boolean) {
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    val platform = stop.platform?.trim()?.takeIf {
+        !preview && it.isNotEmpty() && it.lowercase() !in setOf("unknown", "n/a", "null", "-", "—", "?")
+    }
     val observed = !preview && stop.state == "passed" && (stop.actualArrival != null || stop.actualDeparture != null)
     val forecast = !preview && !observed && stop.forecastP50 != null
     val stateLabel = when {
@@ -449,11 +454,32 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
             }
             if (detail != null) Text(detail, color = LM.Ink2, fontSize = 12.sp, fontFamily = PlexMono,
                 modifier = Modifier.padding(top = 5.dp))
-            if (stop.platform != null && !preview) Text("Platform ${stop.platform}", color = LM.Ink3,
-                fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             if (forecast && stop.fallbackReason != null) Text(
                 "Forecast basis: ${stop.fallbackReason.replace('-', ' ')}", color = LM.Ink3,
                 fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+            if (platform != null && largeText) {
+                Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.CenterEnd) {
+                    PlatformBadge(platform, stale)
+                }
+            }
+        }
+        if (platform != null && !largeText) {
+            Spacer(Modifier.size(12.dp))
+            PlatformBadge(platform, stale)
+        }
+    }
+}
+
+@Composable
+private fun PlatformBadge(platform: String, stale: Boolean) {
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    Surface(color = LM.Elevated, shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, LM.Hairline), modifier = Modifier.widthIn(max = if (largeText) 220.dp else 140.dp)
+            .semantics(mergeDescendants = true) {}) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Platform", color = LM.Ink2, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium)
+            Text(platform, color = LM.Ink, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, fontFamily = PlexMono)
+            if (stale) Text("Last known", color = Color(0xFFFFB84D), fontSize = 11.sp, lineHeight = 14.sp)
         }
     }
 }

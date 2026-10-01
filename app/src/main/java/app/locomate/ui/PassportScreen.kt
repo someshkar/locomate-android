@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import app.locomate.data.SavedJourney
 import app.locomate.data.PassportMetrics
 import app.locomate.data.PassportPeriods
+import app.locomate.data.openUnavailableReason
 import app.locomate.ui.theme.LM
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -135,19 +136,23 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
         Spacer(Modifier.height(15.dp))
         if (filteredRoutes.isNotEmpty()) {
             filteredRoutes.forEach { route ->
+            val unavailableReason = route.openUnavailableReason()
             Surface(
                 color = Color(0xFF1A1C22),
                 shape = RoundedCornerShape(23.dp),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onOpen(route) }
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                    .clickable(enabled = unavailableReason == null) { onOpen(route) }
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Outlined.Train, contentDescription = null, tint = LM.Accent)
                     Column(Modifier.weight(1f)) {
                         Text(route.trainName, color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${route.trainNumber} · ${route.originCode} → ${route.destinationCode} · ${if (route.preview) "Preview" else route.originDate ?: "Dated run"}",
+                        Text("${route.trainNumber} · ${route.originCode} → ${route.destinationCode} · ${if (route.preview) "Preview" else route.originDate ?: "Origin date unavailable"}",
                             color = LM.Ink2, fontSize = 12.sp)
+                        if (unavailableReason != null) Text(unavailableReason, color = LM.Ink2,
+                            fontSize = 12.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 6.dp))
                     }
                     IconButton(onClick = { onRemove(route.key) }) {
                         Icon(Icons.Outlined.DeleteOutline,

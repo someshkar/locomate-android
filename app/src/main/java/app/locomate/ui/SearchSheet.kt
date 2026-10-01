@@ -50,7 +50,16 @@ import app.locomate.data.TrainSearchResult
 import app.locomate.ui.theme.LM
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.time.LocalDate
+
+private data class SearchResultState(
+    val query: String,
+    val trains: List<TrainSearchResult> = emptyList(),
+    val error: String? = null,
+    val loading: Boolean = false,
+)
 
 @Composable
 fun SearchSheet(
@@ -62,26 +71,27 @@ fun SearchSheet(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf(RailGateway.indiaToday()) }
-    var liveResults by androidx.compose.runtime.remember { mutableStateOf<List<TrainSearchResult>>(emptyList()) }
-    var searchError by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
-    var searching by androidx.compose.runtime.remember { mutableStateOf(false) }
-    LaunchedEffect(gateway, query) {
-        if (!gateway.configured || query.isBlank()) {
-            liveResults = emptyList()
-            searchError = null
-        } else {
-            delay(300)
-            searching = true
-            try {
-                liveResults = gateway.search(query)
-                searchError = null
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                liveResults = emptyList()
-                searchError = error.message ?: "Search unavailable."
-            }
-            searching = false
+    val requestQuery = query.trim()
+    var searchState by androidx.compose.runtime.remember(gateway) { mutableStateOf(SearchResultState("")) }
+    // A result belongs only to its query, including the frame before the replacement effect starts.
+    val currentSearch = searchState.takeIf { it.query == requestQuery }
+        ?: SearchResultState(requestQuery, loading = gateway.configured && requestQuery.isNotEmpty())
+    val liveResults = currentSearch.trains
+    val searchError = currentSearch.error
+    val searching = currentSearch.loading
+    LaunchedEffect(gateway, requestQuery) {
+        searchState = SearchResultState(requestQuery, loading = gateway.configured && requestQuery.isNotEmpty())
+        if (!gateway.configured || requestQuery.isEmpty()) return@LaunchedEffect
+        delay(300)
+        try {
+            val trains = gateway.search(requestQuery)
+            currentCoroutineContext().ensureActive()
+            searchState = SearchResultState(requestQuery, trains = trains)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
+            searchState = SearchResultState(requestQuery, error = error.message ?: "Search unavailable.")
         }
     }
     val results = routes.filter {
@@ -164,8 +174,8 @@ fun SearchSheet(
                         color = LM.Elevated,
                         shape = RoundedCornerShape(22.dp),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(
-                            enabled = runCatching { LocalDate.parse(date) }.isSuccess
-                        ) { onSelectLive(train, date) }
+                            enabled = !searching && runCatching { LocalDate.parse(date) }.isSuccess
+                        ) { if (query.trim() == requestQuery) onSelectLive(train, date) }
                     ) {
                         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -25,6 +25,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.view.doOnLayout
+import app.locomate.BuildConfig
 import app.locomate.data.RoutePreview
 import app.locomate.data.NetworkBounds
 import app.locomate.data.NetworkTrain
@@ -130,7 +131,7 @@ fun RailMap(
                     .build()
                 // Rail data and the accessible list must not depend on a basemap download.
                 this@apply.doOnLayout { publishBounds() }
-                map.setStyle("https://tiles.openfreemap.org/styles/dark") {
+                map.setStyle(BuildConfig.MAP_STYLE_URL) {
                     if (!mapActive.get()) return@setStyle
                     styleReady = true
                     attribution?.attach(this@apply, map)
