@@ -9,9 +9,11 @@ import android.net.Uri
 import android.os.Build
 import android.provider.CalendarContract
 import android.widget.Toast
+import app.locomate.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
 import androidx.core.content.FileProvider
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -34,11 +36,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContactPage
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Train
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -66,6 +63,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -866,9 +864,9 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
                         haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
                         onTab(it)
                     }
-                    NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", Icons.Outlined.Train, selectTab, Modifier.weight(1f))
-                    NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", Icons.Outlined.Public, selectTab, Modifier.weight(1f))
-                    NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", Icons.Outlined.ContactPage, selectTab, Modifier.weight(1f))
+                    NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", R.drawable.navigation_journeys, selectTab, Modifier.weight(1f))
+                    NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", R.drawable.navigation_explore, selectTab, Modifier.weight(1f))
+                    NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", R.drawable.navigation_passport, selectTab, Modifier.weight(1f))
                 }
             }
         }
@@ -882,7 +880,7 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
         ) {
             DockGlassSurface(Modifier.dockRim(30f)) { glass ->
                 Box(Modifier.fillMaxSize().background(if (glass) lens else fallback), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                    Icon(painterResource(R.drawable.navigation_search), contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                 }
             }
         }
@@ -894,7 +892,7 @@ private fun NavItem(
     item: Tab,
     selected: Tab?,
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    @DrawableRes icon: Int,
     onTab: (Tab) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -919,7 +917,7 @@ private fun NavItem(
     ) {
         Column(Modifier.then(if (active) Modifier.dockRim(27f) else Modifier).padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(21.dp))
+            Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.size(21.dp))
             Spacer(Modifier.height(4.dp))
             if (showLabel) {
                 Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
