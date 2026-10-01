@@ -5,12 +5,15 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,6 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -56,7 +62,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolean, productionMode: Boolean = false,
                   message: String? = null, statusCardEnabled: Boolean = false, onSave: () -> Unit,
@@ -85,8 +91,9 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
     val calendarEnd = if (fullRoute) route?.arrivalInstantMillis else alighting?.scheduledArrivalMillis
     val segmentLabel = if (fullRoute) route?.routeLabel else if (boarding != null && alighting != null)
         "${boarding.name} to ${alighting.name}" else route?.routeLabel
+    val mapAttribution = remember { MapAttributionController() }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
-        RailMap(route)
+        RailMap(route, attribution = mapAttribution)
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
@@ -115,9 +122,11 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         val screenHeightPx = with(density) { maxHeight.toPx() }
         val collapsedTop = screenHeightPx * 0.47f
         val expandedTop = screenHeightPx * 0.10f
-        var sheetTop by remember(screenHeightPx) { mutableFloatStateOf(collapsedTop) }
+        val largeText = density.fontScale >= 1.5f
+        var sheetTop by remember(screenHeightPx, largeText) { mutableFloatStateOf(if (largeText) expandedTop else collapsedTop) }
         var settleJob by remember { mutableStateOf<Job?>(null) }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val expanded = sheetTop < (collapsedTop + expandedTop) / 2f
 
         Surface(
             color = LM.Glass,
@@ -150,15 +159,30 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         )
                     }.padding(horizontal = 24.dp)
                 ) {
-                    Box(Modifier.fillMaxWidth().height(23.dp), contentAlignment = Alignment.Center) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f).height(48.dp)
+                        .clickable(role = Role.Button) {
+                            settleJob?.cancel()
+                            settleJob = scope.launch {
+                                Animatable(sheetTop).animateTo(if (expanded) collapsedTop else expandedTop,
+                                    spring(dampingRatio = 0.88f, stiffness = Spring.StiffnessMedium)) { sheetTop = value }
+                            }
+                        }.semantics {
+                            contentDescription = if (expanded) "Collapse journey details" else "Expand journey details"
+                            stateDescription = if (expanded) "Expanded" else "Collapsed"
+                        }, contentAlignment = Alignment.Center) {
                         Box(Modifier.size(width = 40.dp, height = 5.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.42f)))
                     }
+                    MapAttributionButton(mapAttribution)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("My Journeys", color = LM.Ink, fontSize = 33.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("My Journeys", color = LM.Ink, fontSize = 33.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f).semantics { heading() })
                         Surface(onClick = onSave, enabled = route != null,
                             color = Color.White.copy(alpha = 0.09f), shape = CircleShape,
                             modifier = Modifier.size(48.dp).semantics {
                                 contentDescription = if (saved) "Remove saved journey" else "Save journey"
+                                stateDescription = if (saved) "Saved" else "Not saved"
                             }) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
@@ -196,20 +220,19 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Surface(color = LM.Elevated, shape = RoundedCornerShape(LM.RadiusCard),
                         modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (route == null) "No journey selected" else "${route.trainNumber} · ${route.displayName}",
-                            color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("${route.trainNumber} · ${route.displayName}",
+                            color = LM.Ink2, fontSize = 14.sp)
                         Text(route?.statusLabel ?: "SEARCH TO START", color = if (route?.isPreview == true) Color(0xFFBCA7FF) else LM.Accent,
                             fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 21.sp,
-                        fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, maxLines = 2,
-                        overflow = TextOverflow.Ellipsis)
+                        fontWeight = FontWeight.SemiBold, lineHeight = 24.sp)
                     Spacer(Modifier.height(3.dp))
                     Text(if (route.isPreview) "Historical timetable · no live ETA"
-                        else message ?: route.sourceDetail, color = LM.Ink3, fontSize = 13.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        else message ?: route.sourceDetail, color = LM.Ink3, fontSize = 13.sp)
                     route?.etaBand?.let { band ->
                         Spacer(Modifier.height(8.dp))
                         Text(band, color = if (route.statusLabel.startsWith("STALE")) Color(0xFFC7A377) else LM.Accent,
@@ -218,11 +241,13 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     Spacer(Modifier.height(16.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(LM.Hairline))
                     Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp), maxItemsInEachRow = if (largeText) 1 else 3) {
                         StationTime(boarding?.code ?: route?.originCode ?: "—",
                             if (fullRoute) route?.departure ?: "—" else boarding?.scheduledDeparture ?: boarding?.scheduledArrival ?: "—",
                             "Scheduled boarding", if (route?.isPreview == true) Color(0xFFBCA7FF) else LM.Ink)
-                        Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink3, modifier = Modifier.size(20.dp))
+                        if (!largeText) Icon(Icons.Outlined.ArrowForward, contentDescription = null,
+                            tint = LM.Ink3, modifier = Modifier.size(20.dp))
                         val arrivalTime = if (fullRoute) route?.let { it.arrival + if (it.arrivalDay > 1) " +${it.arrivalDay - 1}" else "" } ?: "—"
                             else alighting?.forecastP50 ?: alighting?.scheduledArrival ?: "—"
                         StationTime(alighting?.code ?: route?.destinationCode ?: "—", arrivalTime,
@@ -275,18 +300,20 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             }
                         }
                         Spacer(Modifier.height(10.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp), maxItemsInEachRow = if (largeText) 1 else 3) {
                             Surface(onClick = onStatusCard,
                                 color = if (statusCardEnabled) Color(0xFF173346) else Color(0xFF242832),
                                 shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f).semantics {
                                     contentDescription = if (statusCardEnabled) "Turn status card off" else "Turn status card on"
+                                    stateDescription = if (statusCardEnabled) "On" else "Off"
                                 }) {
                                 Row(Modifier.padding(horizontal = 8.dp, vertical = 14.dp),
                                     horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                                     Icon(if (statusCardEnabled) Icons.Outlined.NotificationsActive else Icons.Outlined.NotificationsNone,
                                         contentDescription = null, tint = LM.Accent, modifier = Modifier.size(18.dp))
-                                    Text("Status card", color = LM.Ink, fontSize = 12.sp, maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 5.dp))
+                                    Text("Status card", color = LM.Ink, fontSize = 12.sp,
+                                        modifier = Modifier.padding(start = 5.dp))
                                 }
                             }
                             if (!route.isPreview && calendarStart != null && calendarEnd != null) {
@@ -315,7 +342,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         }
                         Spacer(Modifier.height(23.dp))
                     }
-                    Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics { heading() })
                     Spacer(Modifier.height(12.dp))
                     }
                     }
@@ -324,14 +352,15 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         itemsIndexed(route.calls, key = { index, stop -> "$index:${stop.code}" }) { index, stop ->
                             TimelineStop(stop, route.isPreview, route.statusLabel.startsWith("STALE"), index == 0)
                         }
-                        item(key = "bottom-space") { Spacer(Modifier.height(160.dp)) }
                     }
+                    item(key = "bottom-space") { Spacer(Modifier.height(160.dp)) }
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, first: Boolean) {
     val observed = !preview && stop.state == "passed" && (stop.actualArrival != null || stop.actualDeparture != null)
@@ -355,7 +384,7 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
         forecast -> stop.forecastP50
         else -> stop.scheduledArrival ?: stop.scheduledDeparture
     } ?: "—"
-    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.Top) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 4.dp)) {
             Box(Modifier.size(if (first || stop.state == "current") 12.dp else 8.dp)
                 .clip(CircleShape).background(stateColor))
@@ -364,9 +393,9 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
         }
         Spacer(Modifier.size(14.dp))
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stop.name, color = LM.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stop.name, color = LM.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(primaryTime, color = stateColor, fontSize = 16.sp, fontWeight = FontWeight.Medium,
                     fontFamily = PlexMono)
             }
@@ -392,7 +421,7 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
 
 @Composable
 private fun StationTime(code: String, time: String, label: String, tone: Color) {
-    Column {
+    Column(Modifier.semantics(mergeDescendants = true) {}) {
         Text(code, color = LM.Ink2, fontSize = 14.sp, fontWeight = FontWeight.Medium,
             fontFamily = PlexMono, letterSpacing = 1.sp)
         Spacer(Modifier.height(4.dp))

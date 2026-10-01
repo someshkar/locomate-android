@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -61,6 +64,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.PreviewRoutes
@@ -391,7 +395,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
         else tab = Tab.Journeys
     }
 
-    Box(Modifier.fillMaxSize()) {
+    NavigationScaffold(tab = tab, onTab = { tab = it; settingsOpen = false }, onSearch = { openSearch() }) { dockInset ->
         Crossfade(targetState = tab, label = "primary tab") { current ->
             when (current) {
                 Tab.Journeys -> JourneyScreen(
@@ -484,7 +488,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                         }
                     }
                 )
-                Tab.Explore -> ExploreScreen(selectedRoute, gateway)
+                Tab.Explore -> ExploreScreen(selectedRoute, gateway, bottomInset = dockInset)
                 Tab.Passport -> if (settingsOpen) SettingsScreen(
                     alertSubscriptions = alertSubscriptions,
                     alertReadError = alertReadError,
@@ -668,14 +672,6 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                 )
             }
         }
-        CapsuleNavBar(
-            tab = tab,
-            onTab = { tab = it; settingsOpen = false },
-            onSearch = { openSearch() },
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-        )
     }
 
     if (searchOpen) {
@@ -751,6 +747,23 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     }
 }
 
+/** Shares the actual dock footprint (including system inset and outer padding) with map cards. */
+@Composable
+internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit,
+                                content: @Composable (Dp) -> Unit) {
+    var dockHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val dockInset = maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
+    Box(Modifier.fillMaxSize()) {
+        content(dockInset)
+        CapsuleNavBar(tab, onTab, onSearch,
+            modifier = Modifier.align(Alignment.BottomCenter)
+                .onSizeChanged { dockHeightPx = it.height }
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp))
+    }
+}
+
 @Composable
 fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
@@ -760,7 +773,7 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             shape = RoundedCornerShape(44.dp),
             shadowElevation = 20.dp,
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-            modifier = Modifier.weight(1f).height(72.dp)
+            modifier = Modifier.weight(1f).heightIn(min = 72.dp)
         ) {
             Row(Modifier.padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 val selectTab: (Tab) -> Unit = {
@@ -808,14 +821,15 @@ private fun NavItem(
         onClick = { onTab(item) },
         color = container,
         shape = RoundedCornerShape(35.dp),
-        modifier = modifier.fillMaxWidth().height(62.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = 62.dp)
             .semantics {
                 contentDescription = label
                 this.selected = active
                 role = Role.Tab
             }
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Column(Modifier.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center) {
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
             Spacer(Modifier.height(3.dp))
             Text(label, color = color, fontSize = 11.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium)

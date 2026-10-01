@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +40,7 @@ import app.locomate.data.SavedJourney
 import app.locomate.data.PassportMetrics
 import app.locomate.ui.theme.LM
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRemove: (String) -> Unit,
                    onOpen: (SavedJourney) -> Unit, onSettings: () -> Unit) {
@@ -48,7 +54,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
         Spacer(Modifier.height(30.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Passport", color = LM.Ink, fontSize = 34.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f))
+                modifier = Modifier.weight(1f).semantics { heading() })
             IconButton(onClick = onSettings) {
                 Icon(Icons.Outlined.Settings, contentDescription = "Open settings", tint = LM.Ink)
             }
@@ -81,7 +87,9 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                     color = LM.Ink2, fontSize = 14.sp, lineHeight = 21.sp)
                 if (savedRuns.isNotEmpty()) {
                     Spacer(Modifier.height(20.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        maxItemsInEachRow = if (LocalDensity.current.fontScale >= 1.5f) 1 else 3) {
                         PassportMetric("SAVED RUNS", metrics.runCount.toString(), Modifier.weight(1f))
                         PassportMetric("SCHEDULED", metrics.knownScheduledHours?.let { "${it}h" } ?: "—", Modifier.weight(1f))
                         PassportMetric("STATIONS", metrics.stationCount.toString(), Modifier.weight(1f))
@@ -90,7 +98,8 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
             }
         }
         Spacer(Modifier.height(30.dp))
-        Text("Saved journeys", color = LM.Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+        Text("Saved journeys", color = LM.Ink, fontSize = 21.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() })
         Spacer(Modifier.height(15.dp))
         if (savedRoutes.isNotEmpty()) {
             savedRoutes.forEach { route ->
@@ -109,7 +118,9 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                             color = LM.Ink2, fontSize = 12.sp)
                     }
                     IconButton(onClick = { onRemove(route.key) }) {
-                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "Remove saved journey", tint = LM.Ink2)
+                        Icon(Icons.Outlined.DeleteOutline,
+                            contentDescription = "Remove ${route.trainNumber}, ${route.originCode} to ${route.destinationCode}, ${if (route.preview) "preview" else route.originDate ?: "dated run"}",
+                            tint = LM.Ink2)
                     }
                 }
             }
@@ -125,11 +136,10 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
 
 @Composable
 private fun PassportMetric(label: String, value: String, modifier: Modifier) {
-    Column(modifier) {
+    Column(modifier.semantics(mergeDescendants = true) {}) {
         Text(label, color = LM.Ink3, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp, maxLines = 1)
+            letterSpacing = 0.5.sp)
         Spacer(Modifier.height(5.dp))
-        Text(value, color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold,
-            maxLines = 1)
+        Text(value, color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
     }
 }

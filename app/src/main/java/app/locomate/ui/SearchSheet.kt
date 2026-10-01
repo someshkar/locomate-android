@@ -33,6 +33,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
@@ -87,7 +90,8 @@ fun SearchSheet(
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize()) {
-        Surface(Modifier.fillMaxWidth().fillMaxHeight(0.72f).align(Alignment.BottomCenter),
+        Surface(Modifier.fillMaxWidth().fillMaxHeight(0.72f).align(Alignment.BottomCenter)
+            .semantics { paneTitle = "Search trains" },
             color = LM.Glass, shape = RoundedCornerShape(topStart = LM.RadiusSheet, topEnd = LM.RadiusSheet)) {
             Column(Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState())) {
                 Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), contentAlignment = Alignment.Center) {
@@ -95,7 +99,8 @@ fun SearchSheet(
                         .background(LM.Ink3.copy(alpha = 0.55f)))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = LM.Ink, modifier = Modifier.weight(1f))
+                    Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = LM.Ink,
+                        modifier = Modifier.weight(1f).semantics { heading() })
                     IconButton(onClick = onClose) {
                         Icon(Icons.Outlined.Close, contentDescription = "Close search", tint = LM.Ink)
                     }
@@ -106,7 +111,7 @@ fun SearchSheet(
                     value = query,
                     onValueChange = { query = it },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.Ink2) },
-                    placeholder = { Text("Train name or number", color = LM.Ink3) },
+                    label = { Text("Train name or number", color = LM.Ink2) },
                     singleLine = true,
                     shape = RoundedCornerShape(24.dp),
                     colors = OutlinedTextFieldDefaults.colors(

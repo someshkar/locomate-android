@@ -3,6 +3,7 @@ package app.locomate.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,7 +66,7 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                 Icon(Icons.Outlined.ArrowBack, contentDescription = "Back to Passport", tint = LM.Ink)
             }
             Text("Settings", color = LM.Ink, fontSize = 32.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 8.dp))
+                modifier = Modifier.padding(start = 8.dp).semantics { heading() })
         }
         Spacer(Modifier.height(5.dp))
         Text("Rail data, privacy and source labels", color = LM.Ink2, fontSize = 14.sp)
@@ -140,9 +144,8 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             if (contributionEnabled) {
                 Spacer(Modifier.height(10.dp))
                 Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF162B3D),
-                    modifier = Modifier.fillMaxWidth().clickable(enabled = !contributionBusy) {
-                        onContributionBackground(!contributionBackground)
-                    }) {
+                    modifier = Modifier.fillMaxWidth().toggleable(value = contributionBackground,
+                        enabled = !contributionBusy, role = Role.Switch, onValueChange = onContributionBackground)) {
                     Text(if (contributionBackground) "Background contribution: on" else "Background contribution: off",
                         color = LM.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(16.dp))

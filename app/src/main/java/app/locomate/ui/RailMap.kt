@@ -47,6 +47,7 @@ fun RailMap(
     modifier: Modifier = Modifier,
     networkTrains: List<NetworkTrain> = emptyList(),
     onVisibleBounds: ((NetworkBounds) -> Unit)? = null,
+    attribution: MapAttributionController? = null,
 ) {
     // MapLibre initialization can block the UI thread. Draw the sheet and dark
     // map placeholder first, then create the native map on the following frame.
@@ -72,6 +73,7 @@ fun RailMap(
     var styleReady by remember(route?.trainNumber, route?.runDate) { mutableStateOf(false) }
     val markerRefs = remember(route?.trainNumber, route?.runDate) { mutableListOf<Marker>() }
     val markerSync = remember(route?.trainNumber, route?.runDate) { MarkerSync() }
+    val mapActive = remember(route?.trainNumber, route?.runDate) { java.util.concurrent.atomic.AtomicBoolean(true) }
     val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
         MapView(context).apply {
@@ -94,9 +96,11 @@ fun RailMap(
                     }
                 }
                 map.uiSettings.isCompassEnabled = false
-                map.uiSettings.isAttributionEnabled = true
+                map.uiSettings.isAttributionEnabled = attribution == null
                 map.setStyle("https://tiles.openfreemap.org/styles/dark") {
+                    if (!mapActive.get()) return@setStyle
                     styleReady = true
+                    attribution?.attach(this@apply, map)
                     val points = route?.geometry.orEmpty()
                     val center = if (points.isEmpty()) LatLng(23.7, 76.0) else {
                         val south = points.minOf { it.latitude }
@@ -135,7 +139,7 @@ fun RailMap(
                 Lifecycle.Event.ON_START -> mapView.onStart()
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
                 Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                Lifecycle.Event.ON_STOP -> { attribution?.stop(mapView); mapView.onStop() }
                 Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
                 else -> Unit
             }
@@ -143,6 +147,8 @@ fun RailMap(
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+            mapActive.set(false)
+            attribution?.detach(mapView)
             mapView.onDestroy()
         }
     }
