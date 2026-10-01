@@ -71,6 +71,22 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     // A bad production URL remains an error; it must never activate preview.
     val configured: Boolean get() = configuredValue
 
+    /** The FCM target is a Firebase Installation ID from the native SDK. */
+    suspend fun registerAndroidStatus(runId: String, fcmTarget: String) {
+        require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
+        require(fcmTarget.length in 20..4096 && fcmTarget.all { it.code in 0x21..0x7e }) {
+            "Invalid FCM target"
+        }
+        val response = authenticatedRequest("/v1/android-status/subscription", "POST",
+            JSONObject().put("runId", runId).put("fcmTarget", fcmTarget))
+        if (!response.optBoolean("stored", false)) throw GatewayError("Status delivery was not accepted.")
+    }
+
+    suspend fun unregisterAndroidStatus(runId: String) {
+        require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
+        authenticatedRequest("/v1/android-status/subscription/$runId", "DELETE", null)
+    }
+
     suspend fun search(query: String): List<TrainSearchResult> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
@@ -209,7 +225,9 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             distanceKm = journey.optDouble("distanceKm", 0.0),
             durationMinutes = journey.optInt("scheduledDurationMinutes", 0),
             isPreview = false,
-            runId = journey.getString("id"),
+            // The enriched response prefixes its ID with `run:` while the collector
+            // and push subscriptions identify the same dated run without that prefix.
+            runId = "$number:$originDate",
             runDate = originDate,
             statusLabel = status,
             sourceDetail = source,
@@ -227,7 +245,9 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         )
     }
 
-    private suspend fun get(path: String): JSONObject {
+    private suspend fun get(path: String): JSONObject = authenticatedRequest(path, "GET", null)
+
+    private suspend fun authenticatedRequest(path: String, method: String, body: JSONObject?): JSONObject {
         repeat(2) { attempt ->
             val token = sessionLock.withLock {
                 if (accessToken == null || System.currentTimeMillis() + 30_000 >= expiresAt) {
@@ -239,7 +259,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 accessToken ?: throw GatewayError("The rail service could not start a device session.")
             }
             try {
-                return rawRequest(path, "GET", token, null)
+                return rawRequest(path, method, token, body)
             } catch (error: GatewayError) {
                 if (error.status != 401 || attempt == 1) throw error
                 sessionLock.withLock { accessToken = null; expiresAt = 0 }
@@ -300,7 +320,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                         ?: "Rail service unavailable ($status)."
                     throw GatewayError(message, status)
                 }
-                JSONObject(responseText)
+                if (responseText.isBlank()) JSONObject() else JSONObject(responseText)
             } finally {
                 connection.disconnect()
             }

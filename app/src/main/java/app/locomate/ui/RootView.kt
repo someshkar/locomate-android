@@ -67,6 +67,7 @@ import app.locomate.data.RailGateway
 import app.locomate.data.RoutePreview
 import app.locomate.data.SavedJourney
 import app.locomate.data.SavedJourneyStore
+import app.locomate.data.StatusPushWork
 import app.locomate.data.TrainSearchResult
 import app.locomate.ui.theme.LM
 import androidx.metrics.performance.PerformanceMetricsState
@@ -121,6 +122,7 @@ fun RootView(launchRevision: Int = 0) {
         if (route?.runId != selectedRoute?.runId) return@rememberLauncherForActivityResult
         if (granted && route != null && statusCard.show(route)) {
             statusCardRunId = route.runId
+            StatusPushWork.enable(context)
             journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
         } else {
             journeyMessage = "Allow notifications in Android settings to show the status card."
@@ -141,10 +143,16 @@ fun RootView(launchRevision: Int = 0) {
         searchOpen = true
     }
 
+    fun stopStatusCard() {
+        val runId = statusCardRunId
+        statusCard.cancel()
+        statusCardRunId = null
+        if (runId != null) StatusPushWork.unregister(context, runId)
+    }
+
     fun stopStatusCardUnless(runId: String?) {
         if (statusCardRunId != null && statusCardRunId != runId) {
-            statusCard.cancel()
-            statusCardRunId = null
+            stopStatusCard()
         }
     }
 
@@ -152,6 +160,7 @@ fun RootView(launchRevision: Int = 0) {
         if (!gateway.configured) return@LaunchedEffect
         val active = statusCard.activeRun() ?: return@LaunchedEffect
         statusCardRunId = active.runId
+        StatusPushWork.enable(context)
         if (liveRoute?.runId == active.runId) {
             tab = Tab.Journeys
             return@LaunchedEffect
@@ -169,8 +178,7 @@ fun RootView(launchRevision: Int = 0) {
             throw cancelled
         } catch (_: Exception) {
             if (selectionEpoch == epoch) {
-                statusCard.cancel()
-                statusCardRunId = null
+                stopStatusCard()
                 journeyMessage = "The saved status card could not refresh. Select the train again."
             }
         }
@@ -178,16 +186,14 @@ fun RootView(launchRevision: Int = 0) {
 
     LaunchedEffect(selectedRoute?.runId) {
         if (selectedRoute != null && statusCardRunId != null && selectedRoute.runId != statusCardRunId) {
-            statusCard.cancel()
-            statusCardRunId = null
+            stopStatusCard()
         }
     }
 
     LaunchedEffect(liveRoute, statusCardRunId) {
         val current = liveRoute
         if (current != null && current.runId == statusCardRunId && !statusCard.show(current)) {
-            statusCard.cancel()
-            statusCardRunId = null
+            stopStatusCard()
             journeyMessage = "The status card stopped because this run is stale or notifications are unavailable."
         }
     }
@@ -239,8 +245,7 @@ fun RootView(launchRevision: Int = 0) {
                             route == null || route.isPreview || route.runId == null || route.runDate == null ->
                                 journeyMessage = "A dated production journey is required for a status card."
                             route.runId == statusCardRunId -> {
-                                statusCard.cancel()
-                                statusCardRunId = null
+                                stopStatusCard()
                                 journeyMessage = "Status card is off for ${route.trainNumber}."
                             }
                             route.statusLabel.startsWith("STALE") ->
@@ -252,6 +257,7 @@ fun RootView(launchRevision: Int = 0) {
                             }
                             statusCard.show(route) -> {
                                 statusCardRunId = route.runId
+                                StatusPushWork.enable(context)
                                 journeyMessage = "Status card shows ${route.trainNumber}'s current journey status."
                             }
                             else -> journeyMessage = "Enable notifications in Android settings to show the status card."
@@ -344,7 +350,7 @@ fun RootView(launchRevision: Int = 0) {
                                 selectedPreview = previewRoute
                             }
                         } else if (!saved.preview && gateway.configured && saved.originDate != null) {
-                            stopStatusCardUnless("run:${saved.trainNumber}:${saved.originDate}")
+                            stopStatusCardUnless("${saved.trainNumber}:${saved.originDate}")
                             passportNotice = null
                             tab = Tab.Journeys
                             selectedPreview = null
@@ -397,7 +403,7 @@ fun RootView(launchRevision: Int = 0) {
             onSelectLive = { train: TrainSearchResult, date: String ->
                 selectionEpoch++
                 val selectedEpoch = selectionEpoch
-                stopStatusCardUnless("run:${train.number}:$date")
+                stopStatusCardUnless("${train.number}:$date")
                 searchOpen = false
                 tab = Tab.Journeys
                 selectedPreview = null
