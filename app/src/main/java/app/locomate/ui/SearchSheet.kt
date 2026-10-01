@@ -1,0 +1,174 @@
+package app.locomate.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import app.locomate.data.RoutePreview
+import app.locomate.data.RailGateway
+import app.locomate.data.TrainSearchResult
+import app.locomate.ui.theme.LM
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import java.time.LocalDate
+
+@Composable
+fun SearchSheet(
+    routes: List<RoutePreview>,
+    gateway: RailGateway,
+    onClose: () -> Unit,
+    onSelect: (String) -> Unit,
+    onSelectLive: (TrainSearchResult, String) -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var date by rememberSaveable { mutableStateOf(RailGateway.indiaToday()) }
+    var liveResults by androidx.compose.runtime.remember { mutableStateOf<List<TrainSearchResult>>(emptyList()) }
+    var searchError by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    var searching by androidx.compose.runtime.remember { mutableStateOf(false) }
+    LaunchedEffect(gateway, query) {
+        if (!gateway.configured || query.isBlank()) {
+            liveResults = emptyList()
+            searchError = null
+        } else {
+            delay(300)
+            searching = true
+            try {
+                liveResults = gateway.search(query)
+                searchError = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                liveResults = emptyList()
+                searchError = error.message ?: "Search unavailable."
+            }
+            searching = false
+        }
+    }
+    val results = routes.filter {
+        query.isBlank() || it.trainNumber.contains(query.trim()) || it.name.contains(query.trim(), ignoreCase = true)
+    }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = Color(0xFF101116)) {
+            Column(Modifier.padding(horizontal = 24.dp).verticalScroll(rememberScrollState())) {
+                Spacer(Modifier.height(65.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Where to?", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = LM.Ink, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close search", tint = LM.Ink)
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.Ink2) },
+                    placeholder = { Text("Train name or number", color = LM.Ink3) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (gateway.configured) {
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = date,
+                        onValueChange = { date = it.take(10) },
+                        label = { Text("Origin date · India time", color = LM.Ink2) },
+                        supportingText = { Text("YYYY-MM-DD", color = LM.Ink3) },
+                        isError = runCatching { LocalDate.parse(date) }.isFailure,
+                        singleLine = true,
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(30.dp))
+                Text(if (gateway.configured) "RAIL GATEWAY" else "PREVIEW CATALOGUE", color = LM.Ink3,
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                Spacer(Modifier.height(10.dp))
+                Text(if (gateway.configured) "Search for a train, then choose its India origin date."
+                    else "Sample trains for design review. Live search appears when a rail gateway is configured.",
+                    color = LM.Ink2, fontSize = 13.sp, lineHeight = 19.sp)
+                Spacer(Modifier.height(22.dp))
+                if (searching) Text("Searching…", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
+                if (searchError != null) Text(searchError.orEmpty(), color = Color(0xFFFFB84D), modifier = Modifier.padding(vertical = 20.dp))
+                if (gateway.configured && !searching && query.isNotBlank() && liveResults.isEmpty() && searchError == null) {
+                    Text("No matching trains found.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
+                }
+                if (!gateway.configured && results.isEmpty()) {
+                    Text("No sample train matches this search.", color = LM.Ink2, modifier = Modifier.padding(vertical = 20.dp))
+                }
+                if (gateway.configured) liveResults.forEach { train ->
+                    Surface(
+                        color = Color(0xFF1A1C22),
+                        shape = RoundedCornerShape(22.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable(
+                            enabled = runCatching { LocalDate.parse(date) }.isSuccess
+                        ) { onSelectLive(train, date) }
+                    ) {
+                        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${train.number} · ${train.name}", color = LM.Ink,
+                                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(5.dp))
+                                Text("${train.originName} → ${train.destinationName}", color = LM.Ink2, fontSize = 13.sp)
+                            }
+                            Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink2,
+                                modifier = Modifier.size(22.dp))
+                        }
+                    }
+                }
+                if (!gateway.configured) results.forEach { train ->
+                    Surface(
+                        color = Color(0xFF1A1C22),
+                        shape = RoundedCornerShape(22.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clickable { onSelect(train.trainNumber) }
+                    ) {
+                        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${train.trainNumber} · ${train.displayName}", color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(5.dp))
+                                Text(train.routeLabel, color = LM.Ink2, fontSize = 13.sp)
+                            }
+                            Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = LM.Ink2, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
