@@ -27,21 +27,16 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
             }
             preferences.put(name, values)
         }
-        val cache = JSONObject()
-        val cacheRoot = File(appContext.filesDir, "rail-run-cache")
-        if (cacheRoot.exists()) {
-            for (file in cacheRoot.walkTopDown().filter(File::isFile)) {
-                val relative = file.relativeTo(cacheRoot).invariantSeparatorsPath
-                cache.put(relative, Base64.encodeToString(file.readBytes(), Base64.NO_WRAP))
-            }
-        }
+        val cache = filesBase64(File(appContext.filesDir, "rail-run-cache"))
+        val community = filesBase64(File(appContext.filesDir, "community"))
         val archive = JSONObject()
             .put("schemaVersion", 1)
             .put("exportedAt", Instant.now().toString())
             .put("gateway", remote)
             .put("local", JSONObject()
                 .put("sharedPreferences", preferences)
-                .put("cachedDocumentsBase64", cache))
+                .put("cachedDocumentsBase64", cache)
+                .put("communityFilesBase64", community))
         val folder = File(appContext.cacheDir, "exports").apply { mkdirs() }
         File(folder, "locomate-data-${System.currentTimeMillis()}.json").apply {
             writeText(archive.toString(2), Charsets.UTF_8)
@@ -51,6 +46,7 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
     /** Pause status delivery before the gateway request, then erase local data on success. */
     suspend fun deleteAll(): Boolean {
         try {
+            CommunityLocationService.stop(appContext)
             withContext(Dispatchers.IO) { StatusPushWork.beginPrivacyDeletion(appContext) }
             if (gateway.configured) gateway.deletePrivacyData()
         } catch (error: Exception) {
@@ -71,6 +67,7 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
                 if (!appContext.deleteSharedPreferences(name)) complete = false
             }
             for (folder in listOf(File(appContext.filesDir, "rail-run-cache"),
+                File(appContext.filesDir, "community"),
                 File(appContext.cacheDir, "exports"))) {
                 if (folder.exists() && !folder.deleteRecursively()) complete = false
             }
@@ -83,5 +80,12 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
         return directory.listFiles().orEmpty().asSequence()
             .filter { it.name.startsWith("locomate.") && it.extension == "xml" }
             .map { it.name.removeSuffix(".xml") }.sorted().toList()
+    }
+
+    private fun filesBase64(root: File): JSONObject = JSONObject().also { result ->
+        if (root.exists()) for (file in root.walkTopDown().filter(File::isFile)) {
+            result.put(file.relativeTo(root).invariantSeparatorsPath,
+                Base64.encodeToString(file.readBytes(), Base64.NO_WRAP))
+        }
     }
 }

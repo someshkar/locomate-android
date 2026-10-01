@@ -35,12 +35,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.ui.theme.LM
+import app.locomate.data.CommunityConsent
 
 @Composable
 fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                    onOfficialRailway: () -> Unit, onExportData: () -> Unit,
-                   onDeleteData: () -> Unit, privacyBusy: Boolean, privacyNotice: String?) {
+                   onDeleteData: () -> Unit, privacyBusy: Boolean, privacyNotice: String?,
+                   contributionEnabled: Boolean, contributionBackground: Boolean,
+                   contributionBusy: Boolean, contributionNotice: String?,
+                   withdrawalRetryNeeded: Boolean,
+                   onContributionGrant: () -> Unit, onContributionRevoke: () -> Unit,
+                   onContributionBackground: (Boolean) -> Unit) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showGrantConfirm by remember { mutableStateOf(false) }
+    var showRevokeConfirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Color(0xFF090A0D)).statusBarsPadding()
         .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(23.dp))
@@ -78,6 +86,56 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             StatusLegend("SCHEDULED", "A published timetable time", LM.Ink2)
             StatusLegend("STALE", "Last saved data while refresh is unavailable", Color(0xFFFFB84D))
             StatusLegend("PREVIEW", "Historical sample, never live", Color(0xFFBCA7FF))
+        }
+        Spacer(Modifier.height(14.dp))
+        SettingsCard("COMMUNITY CONTRIBUTION") {
+            Text("Optional onboard positions for a current production journey you open.",
+                color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+            Spacer(Modifier.height(12.dp))
+            Surface(shape = RoundedCornerShape(16.dp),
+                color = if (productionMode) Color(0xFF162B3D) else Color(0xFF272A30),
+                modifier = Modifier.fillMaxWidth().clickable(enabled = productionMode && !contributionBusy) {
+                    if (contributionEnabled) showRevokeConfirm = true else showGrantConfirm = true
+                }) {
+                Text(when {
+                    !productionMode -> "Contribution unavailable in preview"
+                    contributionEnabled -> "Stop contribution and withdraw consent"
+                    else -> "Enable contribution"
+                },
+                    color = if (productionMode) LM.Ink else LM.Ink2,
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(16.dp))
+            }
+            if (contributionEnabled) {
+                Spacer(Modifier.height(10.dp))
+                Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF162B3D),
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !contributionBusy) {
+                        onContributionBackground(!contributionBackground)
+                    }) {
+                    Text(if (contributionBackground) "Background contribution: on" else "Background contribution: off",
+                        color = LM.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(16.dp))
+                }
+            }
+            if (withdrawalRetryNeeded && !contributionEnabled) {
+                Spacer(Modifier.height(10.dp))
+                Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF352020),
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !contributionBusy,
+                        onClick = onContributionRevoke)) {
+                    Text("Retry withdrawal and local cleanup", color = Color(0xFFFFB3B3),
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(16.dp))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(if (productionMode)
+                "Only map-matched, plausible train movement is sent. The foreground service shows an ongoing notification; background sharing continues only when enabled."
+                else "A production rail gateway is required. Historical previews never contribute.",
+                color = LM.Ink2, fontSize = 13.sp, lineHeight = 18.sp)
+            if (contributionNotice != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(contributionNotice, color = LM.Ink2, fontSize = 13.sp, lineHeight = 18.sp)
+            }
         }
         Spacer(Modifier.height(14.dp))
         SettingsCard("YOUR DATA") {
@@ -125,6 +183,28 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             }
         },
         dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
+    )
+    if (showGrantConfirm) AlertDialog(
+        onDismissRequest = { showGrantConfirm = false },
+        title = { Text("Enable community contribution?") },
+        text = { Text(CommunityConsent.NOTICE) },
+        confirmButton = {
+            TextButton(onClick = { showGrantConfirm = false; onContributionGrant() }) {
+                Text("I consent and enable")
+            }
+        },
+        dismissButton = { TextButton(onClick = { showGrantConfirm = false }) { Text("Cancel") } },
+    )
+    if (showRevokeConfirm) AlertDialog(
+        onDismissRequest = { showRevokeConfirm = false },
+        title = { Text("Withdraw contribution consent?") },
+        text = { Text("Collection stops immediately and queued observations are erased from this device.") },
+        confirmButton = {
+            TextButton(onClick = { showRevokeConfirm = false; onContributionRevoke() }) {
+                Text("Withdraw and delete", color = Color(0xFFD64949))
+            }
+        },
+        dismissButton = { TextButton(onClick = { showRevokeConfirm = false }) { Text("Cancel") } },
     )
 }
 

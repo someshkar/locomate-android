@@ -20,6 +20,8 @@ import androidx.metrics.performance.JankStats
 import androidx.metrics.performance.FrameDataApi31
 import app.locomate.ui.RootView
 import app.locomate.ui.theme.LocomateTheme
+import app.locomate.data.CommunityLocationService
+import app.locomate.data.CommunityPreferences
 
 class MainActivity : ComponentActivity() {
     private var jankStats: JankStats? = null
@@ -59,12 +61,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        launchRevision++
         jankStats?.isTrackingEnabled = true
     }
 
     override fun onPause() {
         jankStats?.isTrackingEnabled = false
         super.onPause()
+    }
+
+    override fun onStop() {
+        if (!CommunityPreferences(this).background) CommunityLocationService.stop(this)
+        super.onStop()
     }
 
     private companion object {

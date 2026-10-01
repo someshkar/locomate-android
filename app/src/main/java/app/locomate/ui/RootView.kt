@@ -63,6 +63,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.data.PreviewRoutes
 import app.locomate.data.PrivacyDataManager
+import app.locomate.data.CommunityConsent
+import app.locomate.data.CommunityPreferences
+import app.locomate.data.CommunityQueue
+import app.locomate.data.CommunitySync
+import app.locomate.data.CommunityLocationFilter
+import app.locomate.data.CommunityLocationService
 import app.locomate.BuildConfig
 import app.locomate.data.JourneyPlan
 import app.locomate.data.JourneyPlanStore
@@ -91,6 +97,9 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     val planStore = remember { JourneyPlanStore(context) }
     val gateway = remember { RailGateway(context) }
     val privacy = remember(gateway) { PrivacyDataManager(context, gateway) }
+    val contributionPreferences = remember { CommunityPreferences(context) }
+    val contributionQueue = remember { CommunityQueue(context) }
+    val contributionSync = remember { CommunitySync(contributionQueue, gateway, contributionPreferences) }
     val statusCard = remember { JourneyStatusNotification(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val routes = remember(gateway.configured) {
@@ -112,6 +121,24 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     var savedJourneys by remember { mutableStateOf(passport.load()) }
     var privacyBusy by remember { mutableStateOf(false) }
     var privacyNotice by remember { mutableStateOf<String?>(null) }
+    var contributionEnabled by remember { mutableStateOf(contributionPreferences.enabled) }
+    var contributionBackground by remember { mutableStateOf(contributionPreferences.background) }
+    var contributionBusy by remember { mutableStateOf(false) }
+    var contributionNotice by remember { mutableStateOf<String?>(null) }
+    var withdrawalRetryNeeded by remember {
+        mutableStateOf(runCatching {
+            contributionQueue.pendingWithdrawals().isNotEmpty() ||
+                (!contributionPreferences.enabled && contributionQueue.pendingObservations().isNotEmpty())
+        }.getOrDefault(false))
+    }
+    var locationPermissionRevision by remember { mutableIntStateOf(0) }
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        locationPermissionRevision++
+        if (result[Manifest.permission.ACCESS_FINE_LOCATION] != true) {
+            contributionNotice = "Precise location permission is needed. Collection stays off until it is allowed."
+        }
+    }
     LaunchedEffect(tab, searchOpen, settingsOpen, view) {
         if (!BuildConfig.DEBUG) return@LaunchedEffect
         val screen = when {
@@ -123,6 +150,28 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
+    LaunchedEffect(gateway, launchRevision) {
+        if (gateway.configured) runCatching { contributionSync.flushWithdrawals() }
+            .onSuccess {
+                withdrawalRetryNeeded = runCatching {
+                    contributionQueue.pendingWithdrawals().isNotEmpty() ||
+                        (!contributionPreferences.enabled && contributionQueue.pendingObservations().isNotEmpty())
+                }.getOrDefault(true)
+            }
+    }
+    LaunchedEffect(selectedRoute?.runId, contributionEnabled, contributionBackground,
+        locationPermissionRevision, launchRevision, privacyBusy) {
+        CommunityLocationService.stop(context)
+        val route = selectedRoute
+        if (privacyBusy || !contributionEnabled || !gateway.configured || route == null ||
+            !CommunityLocationFilter.inRunWindow(route)) return@LaunchedEffect
+        if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            contributionNotice = "Allow precise location to contribute this journey."
+            return@LaunchedEffect
+        }
+        runCatching { CommunityLocationService.start(context, route) }
+            .onFailure { contributionNotice = "Could not start location contribution: ${it.message ?: "check device settings"}" }
+    }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val route = pendingStatusRoute
         pendingStatusRoute = null
@@ -327,6 +376,72 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                     onBack = { settingsOpen = false },
                     privacyBusy = privacyBusy,
                     privacyNotice = privacyNotice,
+                    contributionEnabled = contributionEnabled,
+                    contributionBackground = contributionBackground,
+                    contributionBusy = contributionBusy,
+                    contributionNotice = contributionNotice,
+                    withdrawalRetryNeeded = withdrawalRetryNeeded,
+                    onContributionGrant = {
+                        scope.launch {
+                            contributionBusy = true
+                            contributionNotice = null
+                            try {
+                                contributionSync.flushWithdrawals()
+                                gateway.recordCommunityConsent(CommunityConsent.evidence(true))
+                                contributionQueue.clearObservations()
+                                contributionPreferences.grant()
+                                contributionEnabled = true
+                                contributionNotice = "Consent recorded. Only a current journey you open can start sharing."
+                                if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                    locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION))
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                contributionNotice = "Consent could not be recorded. Collection stays off."
+                            } finally {
+                                contributionBusy = false
+                            }
+                        }
+                    },
+                    onContributionRevoke = {
+                        CommunityLocationService.stop(context)
+                        val persisted = runCatching { contributionPreferences.revoke() }.isSuccess
+                        contributionEnabled = contributionPreferences.enabled
+                        contributionBackground = contributionPreferences.background
+                        if (!persisted) {
+                            contributionNotice = "Collection stopped for this session, but consent could not be changed on this device. Retry withdrawal."
+                        } else {
+                            val erased = runCatching { contributionQueue.clearObservations() }.isSuccess
+                            val saved = runCatching {
+                                if (contributionQueue.pendingWithdrawals().isEmpty()) {
+                                    contributionQueue.addWithdrawal(CommunityConsent.evidence(false))
+                                }
+                            }.isSuccess
+                            contributionNotice = when {
+                                !erased -> "Collection stopped, but queued observations could not be erased. Retry deletion."
+                                saved -> "Collection stopped and local observations deleted. Sending withdrawal…"
+                                else -> "Collection stopped, but withdrawal could not be saved. Retry while online."
+                            }
+                            if (saved) scope.launch {
+                                runCatching { contributionSync.flushWithdrawals() }
+                                    .onSuccess {
+                                        withdrawalRetryNeeded = !erased
+                                        if (erased) contributionNotice = "Consent withdrawn on this device and the gateway."
+                                    }
+                                    .onFailure { if (erased) contributionNotice = "Collection stopped here. Gateway withdrawal is saved for retry." }
+                            }
+                        }
+                        withdrawalRetryNeeded = true
+                    },
+                    onContributionBackground = { enabled ->
+                        contributionPreferences.setBackground(enabled)
+                        contributionBackground = contributionPreferences.background
+                        contributionNotice = if (enabled)
+                            "Background sharing is on while a current journey is active."
+                            else "Background sharing is off."
+                    },
                     onExportData = {
                         scope.launch {
                             privacyBusy = true

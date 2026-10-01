@@ -52,7 +52,7 @@ data class NetworkTrain(
 
 data class NetworkSnapshot(val trains: List<NetworkTrain>, val generatedAt: String, val freshUntil: String)
 
-class GatewayError(message: String, val status: Int = 0) : Exception(message)
+class GatewayError(message: String, val status: Int = 0, val code: String = "") : Exception(message)
 
 /** Gateway-only rail client. Provider credentials never enter the Android app. */
 class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) {
@@ -77,6 +77,17 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     /** Returns only after the authenticated installation was deleted on the gateway. */
     suspend fun deletePrivacyData() {
         authenticatedRequest("/v1/privacy/installation", "DELETE", null)
+    }
+
+    suspend fun recordCommunityConsent(evidence: JSONObject) {
+        val response = authenticatedRequest("/v1/privacy/consent", "POST", evidence)
+        if (!response.optBoolean("recorded", false)) throw GatewayError("Community consent was not recorded.")
+    }
+
+    suspend fun uploadObservations(batch: JSONObject, idempotencyKey: String): Set<Long> {
+        val response = authenticatedRequest("/v1/observations/batch", "POST", batch, idempotencyKey)
+        val accepted = response.getJSONArray("acceptedRecordIds")
+        return (0 until accepted.length()).map { accepted.getLong(it) }.toSet()
     }
 
     /** The FCM target is a Firebase Installation ID from the native SDK. */
@@ -255,7 +266,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
 
     private suspend fun get(path: String): JSONObject = authenticatedRequest(path, "GET", null)
 
-    private suspend fun authenticatedRequest(path: String, method: String, body: JSONObject?): JSONObject {
+    private suspend fun authenticatedRequest(path: String, method: String, body: JSONObject?,
+                                             idempotencyKey: String? = null): JSONObject {
         repeat(2) { attempt ->
             val token = sessionLock.withLock {
                 if (accessToken == null || System.currentTimeMillis() + 30_000 >= expiresAt) {
@@ -267,7 +279,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 accessToken ?: throw GatewayError("The rail service could not start a device session.")
             }
             try {
-                return rawRequest(path, method, token, body)
+                return rawRequest(path, method, token, body, idempotencyKey)
             } catch (error: GatewayError) {
                 if (error.status != 401 || attempt == 1) throw error
                 sessionLock.withLock { accessToken = null; expiresAt = 0 }
@@ -300,7 +312,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         }.getOrNull()
     }
 
-    private suspend fun rawRequest(path: String, method: String, token: String?, body: JSONObject?): JSONObject =
+    private suspend fun rawRequest(path: String, method: String, token: String?, body: JSONObject?,
+                                   idempotencyKey: String? = null): JSONObject =
         withContext(Dispatchers.IO) {
             val endpoint = base ?: throw GatewayError("A rail gateway has not been configured.")
             val connection = (URI.create(endpoint + path).toURL().openConnection() as HttpURLConnection)
@@ -311,6 +324,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 connection.setRequestProperty("Accept", "application/json")
                 connection.setRequestProperty("User-Agent", "LocomateNative/1.0")
                 if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
+                if (idempotencyKey != null) connection.setRequestProperty("Idempotency-Key", idempotencyKey)
                 if (body != null) {
                     connection.doOutput = true
                     connection.setRequestProperty("Content-Type", "application/json")
@@ -326,7 +340,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                         "The rail feed is temporarily unavailable. Try again shortly."
                     else error?.optString("message")?.takeIf { it.isNotBlank() }
                         ?: "Rail service unavailable ($status)."
-                    throw GatewayError(message, status)
+                    throw GatewayError(message, status, code)
                 }
                 if (responseText.isBlank()) JSONObject() else JSONObject(responseText)
             } finally {
