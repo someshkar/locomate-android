@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -54,6 +56,8 @@ import app.locomate.data.PassportMetrics
 import app.locomate.data.PassportPeriods
 import app.locomate.data.openUnavailableReason
 import app.locomate.ui.theme.LM
+import java.time.LocalDate
+import java.time.ZoneId
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -66,6 +70,12 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
     val filteredRoutes = remember(savedRoutes, year) { PassportPeriods.filter(savedRoutes, year) }
     val savedRuns = filteredRoutes.filterNot { it.preview }
     val metrics = PassportMetrics.from(filteredRoutes)
+    val indiaYear = remember { LocalDate.now(ZoneId.of("Asia/Kolkata")).year }
+    val thisYearRoutes = remember(savedRoutes, indiaYear) { PassportPeriods.filter(savedRoutes, indiaYear) }
+    val thisYearMetrics = remember(thisYearRoutes) { PassportMetrics.from(thisYearRoutes) }
+    val thisYearSummary = thisYearMetrics.knownDistanceKm?.let { distance ->
+        "${java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN")).format(distance)} km · ${thisYearMetrics.runCount} saved ${if (thisYearMetrics.runCount == 1) "run" else "runs"}"
+    } ?: "${thisYearMetrics.runCount} saved ${if (thisYearMetrics.runCount == 1) "run" else "runs"} · distance unavailable"
     val mapAttribution = remember { MapAttributionController() }
     val periodColors = FilterChipDefaults.filterChipColors(
         containerColor = Color.White.copy(alpha = 0.05f),
@@ -145,6 +155,25 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                             PassportMetric("SCHEDULED", metrics.scheduledDurationLabel, Modifier.weight(1f))
                             PassportMetric("STATIONS", metrics.stationCount.toString(), Modifier.weight(1f))
                         }
+                    }
+                }
+            }
+            if (year == null && thisYearMetrics.runCount > 0) {
+                Spacer(Modifier.height(16.dp))
+                Surface(color = Color(0xFF17171D), shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                    modifier = Modifier.fillMaxWidth()
+                        .semantics {
+                            contentDescription = "Show $indiaYear saved runs"
+                            stateDescription = thisYearSummary
+                        }
+                        .clickable { selectedYear = indiaYear }) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("THIS YEAR — $indiaYear", color = LM.Ink2, fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(thisYearSummary, color = LM.Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            lineHeight = 21.sp)
                     }
                 }
             }

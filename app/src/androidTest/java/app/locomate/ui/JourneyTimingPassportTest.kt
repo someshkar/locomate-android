@@ -16,9 +16,12 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.locomate.data.PreviewRoutes
@@ -105,8 +108,9 @@ class JourneyTimingPassportTest {
     }
 
     @Test fun passportYearFiltersRestoreAndUseTheSameRowsForStatsAndOpening() {
-        val current = saved("current", "2026-01-01", 400.0)
-        val earlier = saved("earlier", "2025-12-31", 120.0)
+        val thisYear = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).year
+        val current = saved("current", "$thisYear-01-01", 400.0)
+        val earlier = saved("earlier", "${thisYear - 1}-12-31", 120.0)
         val sample = saved("sample", null, 900.0).copy(preview = true)
         var routes by mutableStateOf(listOf(current, earlier, sample))
         var opened: SavedJourney? = null
@@ -121,19 +125,25 @@ class JourneyTimingPassportTest {
         }
         compose.onNodeWithText("All-Time").assertIsSelected()
         compose.onNodeWithText("520 km").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("2025").performScrollTo().performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Show $thisYear saved runs").performScrollTo().assertIsDisplayed()
+        compose.onRoot().performTouchInput { swipeUp(startY = 1_000f, endY = 700f) }
+        screenshot("passport-this-year-200")
+        compose.onNodeWithContentDescription("Show $thisYear saved runs").performScrollTo().performClick()
+        compose.onNodeWithText(thisYear.toString()).performScrollTo().assertIsSelected()
+        compose.onNodeWithText("400 km").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText((thisYear - 1).toString()).performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithText("120 km").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("current").assertDoesNotExist()
         compose.onNodeWithText("sample").assertDoesNotExist()
         restore.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("2025").performScrollTo().assertIsSelected()
+        compose.onNodeWithText((thisYear - 1).toString()).performScrollTo().assertIsSelected()
         screenshot("passport-year-200")
         compose.onNodeWithText("earlier").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(earlier, opened) }
-        compose.onNodeWithContentDescription("Remove 12951, A to C, 2025-12-31").performClick()
+        compose.onNodeWithContentDescription("Remove 12951, A to C, ${thisYear - 1}-12-31").performClick()
         // Removing the last run in a year returns to All-Time instead of a hidden empty selection.
         compose.onNodeWithText("All-Time").performScrollTo().assertIsSelected()
-        compose.onNodeWithText("2025").assertDoesNotExist()
+        compose.onNodeWithText((thisYear - 1).toString()).assertDoesNotExist()
         compose.onNodeWithText("400 km").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("sample").performScrollTo().assertIsDisplayed()
     }
