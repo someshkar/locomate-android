@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-24.04
@@ -20,5 +24,5 @@ jobs:
       - uses: android-actions/setup-android@v4
       - name: Install Android 36 SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Test and assemble native app
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Test and assemble debug and release apps
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
