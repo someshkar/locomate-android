@@ -16,7 +16,6 @@ import androidx.core.content.FileProvider
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,10 +53,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -823,9 +827,16 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
     var dockHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val dockInset = maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
-    androidx.compose.runtime.CompositionLocalProvider(LocalMapGlass provides mapGlass) {
+    val pageLayer = rememberGraphicsLayer()
+    val backdrop = remember(pageLayer) { DockBackdrop(pageLayer) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalMapGlass provides mapGlass, LocalDockBackdrop provides backdrop) {
         Box(Modifier.fillMaxSize().then(if (searchActive) Modifier.imePadding() else Modifier)) {
-            content(dockInset)
+            Box(Modifier.fillMaxSize()
+                .onGloballyPositioned { backdrop.bounds = it.boundsInWindow() }
+                .drawWithContent {
+                    pageLayer.record { this@drawWithContent.drawContent() }
+                    drawLayer(pageLayer)
+                }) { content(dockInset) }
             CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .onSizeChanged { dockHeightPx = it.height }
@@ -838,17 +849,18 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
 @Composable
 fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier, searchActive: Boolean = false) {
     val haptics = LocalHapticFeedback.current
-    val lens = Brush.verticalGradient(listOf(LM.DockTop, LM.DockBottom))
+    val fallback = Brush.verticalGradient(listOf(LM.DockTop, LM.DockBottom))
+    val lens = Brush.verticalGradient(listOf(Color(0xFF12131B).copy(alpha = 0.42f),
+        Color(0xFF12131B).copy(alpha = 0.26f)))
     Row(modifier.widthIn(max = 330.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(
             color = Color.Transparent,
             shape = RoundedCornerShape(36.dp),
             shadowElevation = 20.dp,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
             modifier = Modifier.weight(1f).heightIn(min = 70.dp)
         ) {
-            MapGlassSurface { glass ->
-                Row(Modifier.background(if (glass) Brush.verticalGradient(listOf(Color(0xAA191A22), Color(0xD00D0E16))) else lens)
+            DockGlassSurface(Modifier.dockRim(36f)) { glass ->
+                Row(Modifier.background(if (glass) lens else fallback)
                     .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     val selectTab: (Tab) -> Unit = {
                         haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
@@ -866,11 +878,10 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             color = Color.Transparent,
             shape = CircleShape,
             shadowElevation = 20.dp,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
             modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
         ) {
-            MapGlassSurface { glass ->
-                Box(Modifier.fillMaxSize().background(if (glass) Brush.verticalGradient(listOf(Color(0xAA191A22), Color(0xD00D0E16))) else lens), contentAlignment = Alignment.Center) {
+            DockGlassSurface(Modifier.dockRim(30f)) { glass ->
+                Box(Modifier.fillMaxSize().background(if (glass) lens else fallback), contentAlignment = Alignment.Center) {
                     Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
                 }
             }
@@ -898,7 +909,7 @@ private fun NavItem(
     Surface(
         onClick = { onTab(item) },
         color = container,
-        shape = RoundedCornerShape(35.dp),
+        shape = RoundedCornerShape(27.dp),
         modifier = modifier.fillMaxWidth().heightIn(min = 54.dp)
             .semantics {
                 contentDescription = label
@@ -906,7 +917,7 @@ private fun NavItem(
                 role = Role.Tab
             }
     ) {
-        Column(Modifier.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.then(if (active) Modifier.dockRim(27f) else Modifier).padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(21.dp))
             Spacer(Modifier.height(4.dp))
