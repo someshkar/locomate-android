@@ -2,6 +2,8 @@
 
 Native Kotlin and Jetpack Compose railway journey app. MapLibre renders an interactive dark rail map with a source-labeled train marker and route geometry above the draggable journey sheet. Explore groups dense train markers by zoom while preserving the count and source of individual services. The primary surfaces are Journeys, Search, Explore, Passport, and Passport settings, with floating navigation.
 
+The Doop design's Android typography uses bundled Space Grotesk for the interface and IBM Plex Mono for times and source details. Their SIL Open Font License texts are in [`licenses/`](licenses/).
+
 ## Build and test
 
 Requirements: JDK 17, Android SDK 36, and an Android 12 (API 31) or newer device or emulator. The Gradle wrapper is included.

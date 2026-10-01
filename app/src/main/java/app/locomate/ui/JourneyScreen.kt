@@ -58,6 +58,7 @@ import app.locomate.data.RoutePreview
 import app.locomate.data.RouteStop
 import app.locomate.data.JourneyPlan
 import app.locomate.ui.theme.LM
+import app.locomate.ui.theme.PlexMono
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -314,18 +315,19 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stop.name, color = LM.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(primaryTime, color = stateColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(primaryTime, color = stateColor, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                    fontFamily = PlexMono)
             }
             Spacer(Modifier.height(4.dp))
             Text("${stop.code}  ·  $stateLabel", color = stateColor, fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold, letterSpacing = 0.7.sp)
+                fontWeight = FontWeight.Medium, fontFamily = PlexMono, letterSpacing = 0.7.sp)
             val detail = when {
                 forecast && stop.forecastP10 != null && stop.forecastP90 != null ->
                     "P10 ${stop.forecastP10}  ·  P50 ${stop.forecastP50}  ·  P90 ${stop.forecastP90}"
                 observed && stop.scheduledArrival != null -> "Scheduled ${stop.scheduledArrival}"
                 else -> null
             }
-            if (detail != null) Text(detail, color = LM.Ink2, fontSize = 12.sp,
+            if (detail != null) Text(detail, color = LM.Ink2, fontSize = 12.sp, fontFamily = PlexMono,
                 modifier = Modifier.padding(top = 5.dp))
             if (stop.platform != null && !preview) Text("Platform ${stop.platform}", color = LM.Ink3,
                 fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
@@ -339,9 +341,10 @@ private fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, firs
 @Composable
 private fun StationTime(code: String, time: String, label: String, tone: Color) {
     Column {
-        Text(code, color = LM.Ink2, fontSize = 14.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp)
+        Text(code, color = LM.Ink2, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            fontFamily = PlexMono, letterSpacing = 1.sp)
         Spacer(Modifier.height(4.dp))
-        Text(time, color = tone, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(time, color = tone, fontSize = 20.sp, fontWeight = FontWeight.Medium, fontFamily = PlexMono)
         Text(label, color = LM.Ink3, fontSize = 12.sp)
     }
 }
