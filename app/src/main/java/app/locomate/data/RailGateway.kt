@@ -52,7 +52,10 @@ data class NetworkTrain(
 
 data class NetworkSnapshot(val trains: List<NetworkTrain>, val generatedAt: String, val freshUntil: String)
 
-class GatewayError(message: String, val status: Int = 0, val code: String = "") : Exception(message)
+class GatewayError(message: String, val status: Int = 0, val code: String = "",
+                   val currentRevision: Long? = null) : Exception(message)
+
+data class JourneyAlertAcknowledgement(val revision: Long, val expiresAt: Long)
 
 /** Gateway-only rail client. Provider credentials never enter the Android app. */
 class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) {
@@ -61,8 +64,10 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     private val base: String? = validateBase(baseUrl)
     private val prefs = appContext.getSharedPreferences("locomate.installation", Context.MODE_PRIVATE)
     private val cacheFolder = File(appContext.filesDir, "rail-run-cache/${railStorageScope(baseUrl)}").apply { mkdirs() }
-    private val installationId: String = prefs.getString("id", null) ?: UUID.randomUUID().toString().also {
-        prefs.edit().putString("id", it).apply()
+    private val installationId: String by lazy {
+        prefs.getString("id", null) ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString("id", it).apply()
+        }
     }
     private val sessionLock = Mutex()
     private var accessToken: String? = null
@@ -104,6 +109,30 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     suspend fun unregisterAndroidStatus(runId: String) {
         require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
         authenticatedRequest("/v1/android-status/subscription/$runId", "DELETE", null)
+    }
+
+    suspend fun registerJourneyAlerts(subscription: JourneyAlertSubscription): JourneyAlertAcknowledgement {
+        require(subscription.enabled && subscription.hasCurrentConsent && subscription.target != null)
+        val quiet = subscription.quietHours?.let { JSONObject().put("start", it.start)
+            .put("end", it.end).put("timeZone", it.timeZone) } ?: JSONObject.NULL
+        val response = authenticatedRequest("/v1/journey-alerts/subscriptions", "POST",
+            JSONObject().put("runId", subscription.runId).put("revision", subscription.revision)
+                .put("consentVersion", subscription.consentVersion).put("noticeHash", subscription.noticeHash)
+                .put("target", JSONObject().put("kind", "fcm").put("fid", subscription.target))
+                .put("channels", org.json.JSONArray(subscription.channels.map { it.wire }))
+                .put("quietHours", quiet))
+        val revision = response.getLong("revision")
+        val expires = response.getLong("expiresAt")
+        if (!response.optBoolean("stored") || response.optString("runId") != subscription.runId ||
+            revision != subscription.revision || expires <= System.currentTimeMillis()) {
+            throw GatewayError("Journey alerts were not confirmed by the gateway.")
+        }
+        return JourneyAlertAcknowledgement(revision, expires)
+    }
+
+    suspend fun unregisterJourneyAlerts(runId: String, revision: Long) {
+        require(JourneyAlertLink.fromRunId(runId) != null && revision > 0)
+        authenticatedRequest("/v1/journey-alerts/subscriptions/$runId?revision=$revision", "DELETE", null)
     }
 
     suspend fun search(query: String): List<TrainSearchResult> {
@@ -150,7 +179,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     suspend fun journey(number: String, originDate: String): RoutePreview {
-        require(Regex("^[0-9]{5}$").matches(number)) { "Invalid train number" }
+        require(Regex("^[0-9]{4,6}$").matches(number)) { "Invalid train number" }
         LocalDate.parse(originDate)
         var cachedAt: Long? = null
         val root = try {
@@ -268,24 +297,34 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
 
     private suspend fun authenticatedRequest(path: String, method: String, body: JSONObject?,
                                              idempotencyKey: String? = null): JSONObject {
+        val deletionRequest = path == "/v1/privacy/installation" && method == "DELETE"
         repeat(2) { attempt ->
+            requireRequestAllowed(deletionRequest)
             val token = sessionLock.withLock {
+                requireRequestAllowed(deletionRequest)
                 if (accessToken == null || System.currentTimeMillis() + 30_000 >= expiresAt) {
                     val auth = rawRequest("/v1/auth/device-session", "POST", null,
-                        JSONObject().put("installationId", installationId))
+                        JSONObject().put("installationId", installationId), deletionRequest = deletionRequest)
                     accessToken = auth.getString("accessToken")
                     expiresAt = System.currentTimeMillis() + (auth.optLong("expiresIn", 3600) * 1000)
                 }
                 accessToken ?: throw GatewayError("The rail service could not start a device session.")
             }
             try {
-                return rawRequest(path, method, token, body, idempotencyKey)
+                return rawRequest(path, method, token, body, idempotencyKey, deletionRequest)
             } catch (error: GatewayError) {
                 if (error.status != 401 || attempt == 1) throw error
                 sessionLock.withLock { accessToken = null; expiresAt = 0 }
             }
         }
         throw GatewayError("The rail service could not authenticate this device.")
+    }
+
+    private fun requireRequestAllowed(deletionRequest: Boolean) {
+        if (!deletionRequest && StatusPushWork.deleting(appContext)) {
+            throw GatewayError("Data deletion is pending. Retry Delete my data in Settings to finish cleanup.",
+                code = "deletion_pending")
+        }
     }
 
     private suspend fun saveRun(number: String, date: String, payload: JSONObject) = withContext(Dispatchers.IO) {
@@ -313,8 +352,9 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     private suspend fun rawRequest(path: String, method: String, token: String?, body: JSONObject?,
-                                   idempotencyKey: String? = null): JSONObject =
+                                   idempotencyKey: String? = null, deletionRequest: Boolean = false): JSONObject =
         withContext(Dispatchers.IO) {
+            requireRequestAllowed(deletionRequest)
             val endpoint = base ?: throw GatewayError("A rail gateway has not been configured.")
             val connection = (URI.create(endpoint + path).toURL().openConnection() as HttpURLConnection)
             try {
@@ -340,7 +380,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                         "The rail feed is temporarily unavailable. Try again shortly."
                     else error?.optString("message")?.takeIf { it.isNotBlank() }
                         ?: "Rail service unavailable ($status)."
-                    throw GatewayError(message, status, code)
+                    throw GatewayError(message, status, code,
+                        error?.optLong("currentRevision")?.takeIf { it in 1..9_007_199_254_740_990L })
                 }
                 if (responseText.isBlank()) JSONObject() else JSONObject(responseText)
             } finally {

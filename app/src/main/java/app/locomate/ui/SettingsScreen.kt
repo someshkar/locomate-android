@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.ui.theme.LM
 import app.locomate.data.CommunityConsent
+import app.locomate.data.JourneyAlertSubscription
 
 @Composable
 fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
@@ -44,6 +45,10 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                    contributionEnabled: Boolean, contributionBackground: Boolean,
                    contributionBusy: Boolean, contributionNotice: String?,
                    withdrawalRetryNeeded: Boolean,
+                   alertSubscriptions: List<JourneyAlertSubscription>,
+                   alertReadError: String?,
+                   alertNotice: String?,
+                   onDisableAlerts: (String) -> Unit, onRetryAlerts: () -> Unit,
                    onContributionGrant: () -> Unit, onContributionRevoke: () -> Unit,
                    onContributionBackground: (Boolean) -> Unit) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -86,6 +91,32 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             StatusLegend("SCHEDULED", "A published timetable time", LM.Ink2)
             StatusLegend("STALE", "Last saved data while refresh is unavailable", Color(0xFFFFB84D))
             StatusLegend("PREVIEW", "Historical sample, never live", Color(0xFFBCA7FF))
+        }
+        Spacer(Modifier.height(14.dp))
+        SettingsCard("JOURNEY ALERTS") {
+            Text("Choose alerts on a dated journey. They use a separate notification channel from the quiet Status card.",
+                color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
+            val visible = alertSubscriptions.filter { it.enabled || it.pending }
+            if (alertReadError != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(alertReadError, color = Color(0xFFFFB84D), fontSize = 14.sp)
+            } else if (visible.isEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("No journey alerts enabled", color = LM.Ink, fontSize = 14.sp)
+            }
+            visible.forEach { subscription ->
+                Spacer(Modifier.height(12.dp))
+                Text(subscription.runId, color = LM.Ink, fontWeight = FontWeight.SemiBold)
+                Text(subscription.status, color = LM.Ink2, fontSize = 13.sp)
+                if (subscription.enabled) TextButton(enabled = !privacyBusy,
+                    onClick = { onDisableAlerts(subscription.runId) }) { Text("Turn off alerts") }
+            }
+            if (visible.any { it.pending }) TextButton(enabled = !privacyBusy,
+                onClick = onRetryAlerts) { Text("Retry pending changes") }
+            if (alertNotice != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(alertNotice, color = LM.Ink2, fontSize = 13.sp)
+            }
         }
         Spacer(Modifier.height(14.dp))
         SettingsCard("COMMUNITY CONTRIBUTION") {
@@ -176,7 +207,7 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
     if (showDeleteConfirm) AlertDialog(
         onDismissRequest = { showDeleteConfirm = false },
         title = { Text("Delete all Locomate data?") },
-        text = { Text("This removes your gateway installation, saved journeys, cached runs, and status card. It cannot be undone.") },
+        text = { Text("This removes your gateway installation, saved journeys, cached runs, alerts, and status card. It cannot be undone.") },
         confirmButton = {
             TextButton(onClick = { showDeleteConfirm = false; onDeleteData() }) {
                 Text("Delete server and device data", color = Color(0xFFD64949))

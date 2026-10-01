@@ -94,7 +94,7 @@ class CommunityLocationService : Service(), LocationListener {
         sync = CommunitySync(queue, gateway, preferences)
         uploads = CommunityUploadRetry(scope, canUpload = {
             val run = active
-            run != null && preferences.enabled && gateway.configured &&
+            run != null && !StatusPushWork.deleting(this) && preferences.enabled && gateway.configured &&
                 run.stopAt > System.currentTimeMillis() &&
                 checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
                 CommunitySession.read(this)?.runId == run.runId
@@ -107,7 +107,7 @@ class CommunityLocationService : Service(), LocationListener {
             return START_NOT_STICKY
         }
         val run = CommunitySession.read(this)
-        if (!preferences.enabled || !gateway.configured || run == null ||
+        if (StatusPushWork.deleting(this) || !preferences.enabled || !gateway.configured || run == null ||
             run.route.size < 2 || run.stopAt <= System.currentTimeMillis() ||
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             stopSelf()
@@ -142,7 +142,7 @@ class CommunityLocationService : Service(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         val run = active ?: return
-        if (!preferences.enabled || run.stopAt <= System.currentTimeMillis()) {
+        if (StatusPushWork.deleting(this) || !preferences.enabled || run.stopAt <= System.currentTimeMillis()) {
             stopSelf()
             return
         }

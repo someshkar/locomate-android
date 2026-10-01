@@ -20,7 +20,7 @@ class JourneyStatusNotificationTest {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         val card = JourneyStatusNotification(context)
-        val preferences = context.getSharedPreferences("locomate.fcm-target", Context.MODE_PRIVATE)
+        val preferences = context.getSharedPreferences(StatusPushWork.preferenceName, Context.MODE_PRIVATE)
         val route = PreviewRoutes.load(context).first().copy(
             isPreview = false, runId = "12951:2026-10-01", runDate = "2026-10-01",
             statusLabel = "PREDICTED · LIVE INPUT",
@@ -33,7 +33,6 @@ class JourneyStatusNotificationTest {
             StatusPushWork.registered(context, "a".repeat(32))
             assertNull(preferences.getString("target", null))
         } finally {
-            StatusPushWork.restoreAfterPrivacyDeletion(context)
             card.cancel()
             StatusPushWork.finishPrivacyDeletion(context)
         }

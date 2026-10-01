@@ -73,7 +73,8 @@ import kotlin.math.roundToInt
 fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolean, productionMode: Boolean = false,
                   message: String? = null, statusCardEnabled: Boolean = false, onSave: () -> Unit,
                   onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
-                  onSearch: () -> Unit = {}, onStatusCard: () -> Unit = {}) {
+                  onSearch: () -> Unit = {}, onStatusCard: () -> Unit = {},
+                  alertStatus: String? = null, onAlerts: () -> Unit = {}) {
     val haptics = LocalHapticFeedback.current
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
     val boarding = route?.calls?.firstOrNull { it.code == segment?.boardingCode }
@@ -262,6 +263,18 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                     }
                     Spacer(Modifier.height(18.dp))
                     if (route != null) {
+                        Surface(onClick = onAlerts, color = Color(0xFF173346),
+                            shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = LM.Accent)
+                                Column(Modifier.padding(start = 12.dp)) {
+                                    Text("Journey alerts", color = LM.Ink, fontWeight = FontWeight.SemiBold)
+                                    Text(alertStatus ?: if (route.isPreview) "Unavailable for historical previews"
+                                        else "Choose station, delay and arrival updates", color = LM.Ink2, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Surface(onClick = onStatusCard,
                                 color = if (statusCardEnabled) Color(0xFF173346) else Color(0xFF242832),

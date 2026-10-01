@@ -10,13 +10,14 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import app.locomate.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import java.util.concurrent.TimeUnit
 
-/** Registers only an explicitly enabled status card with the gateway. */
+/** FCM registration is shared by the explicitly enabled status card and journey alerts. */
 object StatusPushWork {
-    private const val PREFS = "locomate.fcm-target"
+    val preferenceName: String get() = "locomate.fcm-target.${railStorageScope(BuildConfig.RAIL_API_URL)}"
     private const val KEY_TARGET = "target"
     private const val KEY_ACTIVE_RUN_ID = "activeRunId"
     private const val KEY_DELETING = "deletingInstallation"
@@ -26,40 +27,59 @@ object StatusPushWork {
     private const val ACTION_UNREGISTER = "unregister"
     private const val ACTION_EXPIRE = "expire"
 
-    private fun available(context: Context): Boolean = FirebaseApp.getApps(context).isNotEmpty()
-    private fun deleting(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun available(context: Context): Boolean = FirebaseApp.getApps(context).isNotEmpty()
+    private fun preferences(context: Context) = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+    fun deleting(context: Context): Boolean = PrivacyDeletionState.pending(context) || preferences(context)
         .getBoolean(KEY_DELETING, false)
+    fun target(context: Context): String? = preferences(context).getString(KEY_TARGET, null)
+    fun hasConsumers(context: Context): Boolean = JourneyStatusNotification(context).activeRun() != null ||
+        runCatching { JourneyAlertStore(context).hasActive() }.getOrDefault(false)
 
     fun enable(context: Context) {
         if (!available(context) || deleting(context)) return
         val active = JourneyStatusNotification(context).activeRun() ?: return
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        preferences(context).edit()
             .putString(KEY_ACTIVE_RUN_ID, active.runId).apply()
+        refreshRegistration(context)
+        scheduleExpiryCheck(context)
+    }
+
+    fun refreshRegistration(context: Context) {
+        if (!available(context) || deleting(context)) return
+        if (!hasConsumers(context)) {
+            releaseIfUnused(context)
+            return
+        }
         FirebaseMessaging.getInstance().isAutoInitEnabled = true
         FirebaseMessaging.getInstance().register()
         enqueue(context, ACTION_SYNC, null)
-        scheduleExpiryCheck(context)
+        JourneyAlertsWork.enqueue(context)
     }
 
     fun registered(context: Context, target: String) {
         if (deleting(context)) return
         if (target.length !in 20..4096 || target.any { it.code !in 0x21..0x7e }) return
-        if (JourneyStatusNotification(context).activeRun() == null) return
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_TARGET, target).apply()
+        if (!hasConsumers(context)) return
+        if (!preferences(context).edit().putString(KEY_TARGET, target).commit()) return
         enqueue(context, ACTION_SYNC, null)
+        JourneyAlertsWork.enqueue(context)
     }
 
     fun unregister(context: Context, runId: String) {
         if (deleting(context)) return
-        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val preferences = preferences(context)
         if (preferences.getString(KEY_ACTIVE_RUN_ID, null) == runId) {
             preferences.edit().remove(KEY_ACTIVE_RUN_ID).apply()
         }
         enqueue(context, ACTION_UNREGISTER, runId)
-        if (!available(context) || JourneyStatusNotification(context).activeRun() != null) return
+        releaseIfUnused(context)
+    }
+
+    fun releaseIfUnused(context: Context) {
+        if (!available(context) || deleting(context) || hasConsumers(context)) return
         FirebaseMessaging.getInstance().isAutoInitEnabled = false
         FirebaseMessaging.getInstance().unregister()
-        preferences.edit().remove(KEY_TARGET).apply()
+        preferences(context).edit().remove(KEY_TARGET).apply()
     }
 
     fun scheduleExpiryCheck(context: Context) {
@@ -74,9 +94,10 @@ object StatusPushWork {
 
     /** Prevent late token callbacks and workers from recreating a deleted gateway session. */
     fun beginPrivacyDeletion(context: Context) {
-        check(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        PrivacyDeletionState.begin(context)
+        check(preferences(context).edit()
             .putBoolean(KEY_DELETING, true).commit()) { "Could not pause status delivery" }
-        // Status delivery is currently the only WorkManager producer in this app.
+        // Both native push consumers share this deletion gate.
         WorkManager.getInstance(context).cancelAllWork().result.get(10, TimeUnit.SECONDS)
         if (available(context)) {
             FirebaseMessaging.getInstance().isAutoInitEnabled = false
@@ -84,13 +105,10 @@ object StatusPushWork {
         }
     }
 
-    fun restoreAfterPrivacyDeletion(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_DELETING).commit()
-        enable(context)
+    fun finishPrivacyDeletion(context: Context): Boolean {
+        if (!preferences(context).edit().clear().commit()) return false
+        return PrivacyDeletionState.finish(context)
     }
-
-    fun finishPrivacyDeletion(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
 
     private fun enqueue(context: Context, action: String, runId: String?) {
         if (!available(context) || deleting(context)) return
@@ -117,7 +135,7 @@ object StatusPushWork {
                         if (!gateway.configured) return Result.success()
                         val active = JourneyStatusNotification(applicationContext).activeRun()
                             ?: return Result.success()
-                        val target = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        val target = preferences(applicationContext)
                             .getString(KEY_TARGET, null) ?: return Result.success()
                         gateway.registerAndroidStatus(active.runId, target)
                     }
@@ -133,7 +151,7 @@ object StatusPushWork {
                         if (JourneyStatusNotification(applicationContext).activeRun() != null) {
                             return Result.success()
                         }
-                        val runId = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        val runId = preferences(applicationContext)
                             .getString(KEY_ACTIVE_RUN_ID, null) ?: return Result.success()
                         unregister(applicationContext, runId)
                     }

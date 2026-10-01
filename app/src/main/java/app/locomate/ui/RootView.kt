@@ -1,6 +1,7 @@
 package app.locomate.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -40,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,6 +80,13 @@ import app.locomate.data.RoutePreview
 import app.locomate.data.SavedJourney
 import app.locomate.data.SavedJourneyStore
 import app.locomate.data.StatusPushWork
+import app.locomate.data.JourneyAlertChannel
+import app.locomate.data.JourneyAlertQuietHours
+import app.locomate.data.JourneyAlertLink
+import app.locomate.data.JourneyAlertStore
+import app.locomate.data.JourneyAlertSubscription
+import app.locomate.data.JourneyAlertsNotification
+import app.locomate.data.JourneyAlertsWork
 import app.locomate.data.TrainSearchResult
 import app.locomate.ui.theme.LM
 import androidx.metrics.performance.PerformanceMetricsState
@@ -87,6 +96,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CancellationException
 
 enum class Tab { Journeys, Explore, Passport }
+
+private data class AlertDraft(val route: RoutePreview, val channels: Set<JourneyAlertChannel>,
+                              val quietHours: JourneyAlertQuietHours?)
 
 @Composable
 fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
@@ -101,6 +113,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     val contributionQueue = remember { CommunityQueue(context) }
     val contributionSync = remember { CommunitySync(contributionQueue, gateway, contributionPreferences) }
     val statusCard = remember { JourneyStatusNotification(context) }
+    val alertStore = remember { JourneyAlertStore(context) }
+    val alertNotifications = remember { JourneyAlertsNotification(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val routes = remember(gateway.configured) {
         if (gateway.configured) emptyList() else PreviewRoutes.load(context)
@@ -112,6 +126,10 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     var liveRoute by remember { mutableStateOf<RoutePreview?>(null) }
     var statusCardRunId by remember { mutableStateOf(statusCard.activeRun()?.runId) }
     var pendingStatusRoute by remember { mutableStateOf<RoutePreview?>(null) }
+    var pendingAlertDraft by remember { mutableStateOf<AlertDraft?>(null) }
+    var editingAlerts by remember { mutableStateOf<RoutePreview?>(null) }
+    var alertRevision by remember { mutableIntStateOf(0) }
+    var alertNotice by remember { mutableStateOf<String?>(null) }
     var selectionEpoch by remember { mutableIntStateOf(0) }
     var selectedPreview by remember { mutableStateOf<RoutePreview?>(null) }
     var journeyMessage by remember { mutableStateOf<String?>(null) }
@@ -120,7 +138,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     var planVersion by remember { mutableIntStateOf(0) }
     var savedJourneys by remember { mutableStateOf(passport.load()) }
     var privacyBusy by remember { mutableStateOf(false) }
-    var privacyNotice by remember { mutableStateOf<String?>(null) }
+    var privacyNotice by remember { mutableStateOf<String?>(if (StatusPushWork.deleting(context))
+        "Deletion is pending. Network activity and sharing are paused. Retry Delete my data to finish cleanup." else null) }
     var contributionEnabled by remember { mutableStateOf(contributionPreferences.enabled) }
     var contributionBackground by remember { mutableStateOf(contributionPreferences.background) }
     var contributionBusy by remember { mutableStateOf(false) }
@@ -150,6 +169,63 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
     }
     val selectedRoute = if (gateway.configured) selectedPreview ?: liveRoute
         else routes.firstOrNull { it.trainNumber == selectedNumber } ?: routes.firstOrNull()
+    DisposableEffect(alertStore) {
+        val unsubscribe = alertStore.observe { alertRevision++ }
+        onDispose { unsubscribe() }
+    }
+    val alertSnapshot = remember(alertRevision, launchRevision) { runCatching { alertStore.all() } }
+    val alertSubscriptions = alertSnapshot.getOrDefault(emptyList())
+    val alertReadError = alertSnapshot.exceptionOrNull()?.let {
+        "Saved alert choices could not be read. They have been preserved for your data export."
+    }
+    val selectedAlerts = alertSubscriptions.firstOrNull { it.runId == selectedRoute?.runId }
+    val incomingAlert = remember(launchRevision) {
+        JourneyAlertLink.parse((context as? Activity)?.intent?.dataString)
+    }
+
+    fun reportAlert(message: String) {
+        alertNotice = message
+        journeyMessage = message
+    }
+
+    fun saveAlerts(draft: AlertDraft) {
+        if (StatusPushWork.deleting(context)) {
+            reportAlert("Data deletion is pending. Retry Delete my data in Settings before enabling alerts.")
+            return
+        }
+        if (!StatusPushWork.available(context)) {
+            reportAlert("Push delivery is not configured in this build.")
+            return
+        }
+        if (!alertNotifications.available()) {
+            reportAlert("Enable Journey alerts in Android notification settings, then try again.")
+            return
+        }
+        runCatching { alertStore.enable(draft.route, draft.channels, draft.quietHours) }
+            .onFailure { reportAlert(it.message ?: "Could not save alert choices. Try again."); return }
+        reportAlert(if (runCatching { JourneyAlertsWork.recover(context) }.isSuccess)
+            "Alert choices saved. Waiting for gateway confirmation."
+        else "Alert choices saved. Retry pending changes in Settings to connect delivery.")
+    }
+
+    fun disableAlerts(runId: String) {
+        runCatching { alertStore.disable(runId) }
+            .onFailure { reportAlert(it.message ?: "Could not turn alerts off. Try again."); return }
+        alertNotifications.cancel(runId)
+        reportAlert(if (runCatching { JourneyAlertsWork.recover(context) }.isSuccess)
+            "Alerts are off on this device. Gateway removal will retry if offline."
+        else "Alerts are off on this device. Retry pending changes in Settings to remove them from the gateway.")
+    }
+
+    val alertPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val draft = pendingAlertDraft
+        pendingAlertDraft = null
+        if (granted && draft != null) saveAlerts(draft)
+        else journeyMessage = "Alerts remain off. Allow notifications in Android settings to enable them."
+    }
+    LaunchedEffect(gateway, launchRevision) {
+        if (!privacyBusy) runCatching { JourneyAlertsWork.recover(context) }
+    }
     LaunchedEffect(gateway, launchRevision) {
         if (gateway.configured) runCatching { contributionSync.flushWithdrawals() }
             .onSuccess {
@@ -163,7 +239,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
         locationPermissionRevision, launchRevision, privacyBusy) {
         CommunityLocationService.stop(context)
         val route = selectedRoute
-        if (privacyBusy || !contributionEnabled || !gateway.configured || route == null ||
+        if (privacyBusy || StatusPushWork.deleting(context) || !contributionEnabled || !gateway.configured || route == null ||
             !CommunityLocationFilter.inRunWindow(route)) return@LaunchedEffect
         if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             contributionNotice = "Allow precise location to contribute this journey."
@@ -212,8 +288,38 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
         }
     }
 
+    LaunchedEffect(incomingAlert?.url) {
+        val link = incomingAlert ?: return@LaunchedEffect
+        tab = Tab.Journeys
+        settingsOpen = false
+        searchOpen = false
+        selectionEpoch++
+        val epoch = selectionEpoch
+        stopStatusCardUnless(link.runId)
+        try {
+            if (!gateway.configured) {
+                journeyMessage = "This dated journey requires a configured rail gateway. Preview data cannot open it."
+                return@LaunchedEffect
+            }
+            val journey = gateway.journey(link.trainNumber, link.serviceDate)
+            if (selectionEpoch == epoch) {
+                liveRoute = journey
+                selectedPreview = null
+                journeyMessage = null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (selectionEpoch == epoch) journeyMessage = "Could not open ${link.runId}: ${error.message ?: "try again when online"}"
+        } finally {
+            val activity = context as? Activity
+            if (activity?.intent?.dataString == link.url) activity.intent.data = null
+        }
+    }
+
     LaunchedEffect(gateway, launchRevision) {
         if (!gateway.configured) return@LaunchedEffect
+        if (incomingAlert != null) return@LaunchedEffect
         val active = statusCard.activeRun() ?: return@LaunchedEffect
         statusCardRunId = active.runId
         StatusPushWork.enable(context)
@@ -295,6 +401,15 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                     saved = selectedRoute?.let { SavedJourney.from(it, selectedPlan ?: JourneyPlan.default(it)).key in savedJourneys.map(SavedJourney::key) } ?: false,
                     message = journeyMessage,
                     statusCardEnabled = selectedRoute?.runId != null && selectedRoute.runId == statusCardRunId,
+                    alertStatus = alertReadError ?: selectedAlerts?.status,
+                    onAlerts = {
+                        val route = selectedRoute
+                        if (alertReadError != null) {
+                            journeyMessage = alertReadError
+                        } else if (route == null || JourneyAlertSubscription.localExpiry(route) == null) {
+                            journeyMessage = "Alerts need a current dated production journey. Historical previews cannot send alerts."
+                        } else editingAlerts = route
+                    },
                     onStatusCard = {
                         val route = selectedRoute
                         when {
@@ -371,6 +486,13 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                 )
                 Tab.Explore -> ExploreScreen(selectedRoute, gateway)
                 Tab.Passport -> if (settingsOpen) SettingsScreen(
+                    alertSubscriptions = alertSubscriptions,
+                    alertReadError = alertReadError,
+                    alertNotice = alertNotice,
+                    onDisableAlerts = { disableAlerts(it) },
+                    onRetryAlerts = { runCatching { JourneyAlertsWork.recover(context) }
+                        .onSuccess { alertNotice = "Pending alert changes queued for retry." }
+                        .onFailure { alertNotice = it.message ?: "Could not retry alert changes." } },
                     productionMode = gateway.configured,
                     savedCount = savedJourneys.size,
                     onBack = { settingsOpen = false },
@@ -474,14 +596,14 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                                 val complete = privacy.deleteAll()
                                 Toast.makeText(context,
                                     if (complete) "Locomate data deleted"
-                                    else "Server data deleted; reinstall to remove remaining device data",
+                                    else "Server data deleted; retry deletion to finish device cleanup",
                                     Toast.LENGTH_LONG).show()
                                 privacyBusy = false
                                 onDataReset()
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (error: Exception) {
-                                privacyNotice = error.message ?: "Could not delete your data. Try again."
+                                privacyNotice = "Deletion is pending. Network activity and sharing remain paused. Retry Delete my data. ${error.message.orEmpty()}"
                                 privacyBusy = false
                             }
                         }
@@ -603,6 +725,28 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}) {
                 planVersion++
                 editingJourney = false
                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            })
+    }
+    editingAlerts?.let { route ->
+        JourneyAlertsDialog(route, alertSubscriptions.firstOrNull { it.runId == route.runId },
+            pushAvailable = StatusPushWork.available(context),
+            onDismiss = { editingAlerts = null },
+            onDisable = {
+                route.runId?.let(::disableAlerts)
+                editingAlerts = null
+            },
+            onNotificationSettings = {
+                context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
+            },
+            onSave = { channels, quietHours ->
+                editingAlerts = null
+                val draft = AlertDraft(route, channels, quietHours)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    pendingAlertDraft = draft
+                    alertPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else saveAlerts(draft)
             })
     }
 }

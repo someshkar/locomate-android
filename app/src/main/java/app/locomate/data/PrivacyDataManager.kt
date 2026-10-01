@@ -43,26 +43,22 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
         }
     }
 
-    /** Pause status delivery before the gateway request, then erase local data on success. */
+    /** A failed or partial deletion stays paused until the user retries and cleanup completes. */
     suspend fun deleteAll(): Boolean {
-        try {
-            CommunityLocationService.stop(appContext)
-            withContext(Dispatchers.IO) { StatusPushWork.beginPrivacyDeletion(appContext) }
-            if (gateway.configured) gateway.deletePrivacyData()
-        } catch (error: Exception) {
-            withContext(Dispatchers.IO) { StatusPushWork.restoreAfterPrivacyDeletion(appContext) }
-            throw error
-        }
+        CommunityLocationService.stop(appContext)
+        withContext(Dispatchers.IO) { StatusPushWork.beginPrivacyDeletion(appContext) }
+        if (gateway.configured) gateway.deletePrivacyData()
         return withContext(Dispatchers.IO) {
             JourneyStatusNotification(appContext).cancel()
+            JourneyAlertsNotification(appContext).cancelAll()
             var complete = true
+            if (!JourneyAlertStore(appContext).clear()) complete = false
             if (FirebaseApp.getApps(appContext).isNotEmpty()) {
                 complete = try {
                     Tasks.await(FirebaseInstallations.getInstance().delete(), 10, TimeUnit.SECONDS)
                     complete
                 } catch (_: Exception) { false }
             }
-            if (!StatusPushWork.finishPrivacyDeletion(appContext)) complete = false
             for (name in preferenceNames()) {
                 if (!appContext.deleteSharedPreferences(name)) complete = false
             }
@@ -71,6 +67,7 @@ class PrivacyDataManager(context: Context, private val gateway: RailGateway) {
                 File(appContext.cacheDir, "exports"))) {
                 if (folder.exists() && !folder.deleteRecursively()) complete = false
             }
+            if (complete && !StatusPushWork.finishPrivacyDeletion(appContext)) complete = false
             complete
         }
     }

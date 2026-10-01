@@ -44,6 +44,7 @@ class JourneyStatusNotification(context: Context) {
     }
 
     fun show(route: RoutePreview): Boolean {
+        if (StatusPushWork.deleting(appContext)) return false
         val runId = route.runId ?: return false
         val originDate = route.runDate ?: return false
         if (route.isPreview || route.statusLabel.startsWith("STALE")) return false
@@ -102,6 +103,7 @@ class JourneyStatusNotification(context: Context) {
 
     /** Data-only FCM messages may refresh only the card the traveller started. */
     fun applyPush(data: Map<String, String>): Boolean {
+        if (StatusPushWork.deleting(appContext)) return false
         val active = activeRun() ?: return false
         if (data["runId"] != active.runId) return false
         val now = System.currentTimeMillis()
