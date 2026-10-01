@@ -60,7 +60,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     private val configuredValue = baseUrl.isNotBlank()
     private val base: String? = validateBase(baseUrl)
     private val prefs = appContext.getSharedPreferences("locomate.installation", Context.MODE_PRIVATE)
-    private val cacheFolder = File(appContext.filesDir, "rail-run-cache").apply { mkdirs() }
+    private val cacheFolder = File(appContext.filesDir, "rail-run-cache/${railStorageScope(baseUrl)}").apply { mkdirs() }
     private val installationId: String = prefs.getString("id", null) ?: UUID.randomUUID().toString().also {
         prefs.edit().putString("id", it).apply()
     }
@@ -127,6 +127,10 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         }
         val journey = root.getJSONObject("journey")
         val stops = journey.getJSONArray("stops")
+        val stopObjects = (0 until stops.length()).map(stops::getJSONObject)
+        val scheduledTimes = RailClockSequence.resolve(originDate, stopObjects.map { stop ->
+            stop.stringOrNull("scheduledArrival") to stop.stringOrNull("scheduledDeparture")
+        })
         val routeArray = journey.optJSONArray("routeCoordinates")
         val geometry = if (routeArray == null) emptyList() else (0 until routeArray.length()).map { i ->
             val point = routeArray.getJSONObject(i)
@@ -138,6 +142,10 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         val lower = prediction.stringOrNull("lowerBound")
         val upper = prediction.stringOrNull("upperBound")
         val freshness = provenance?.stringOrNull("freshness") ?: "scheduled"
+        val hasForecast = expected != null && prediction.stringOrNull("source") != "scheduled" && freshness != "scheduled"
+        val scheduledEnd = scheduledTimes.lastOrNull()?.arrivalMillis ?: instantMillis(journey.getString("scheduledArrival"))
+        val forecastEnd = if (hasForecast && !prediction.isNull("delayMinutes") && scheduledEnd != null)
+            scheduledEnd + prediction.optInt("delayMinutes").toLong() * 60_000 else scheduledEnd
         val observed = provenance?.stringOrNull("observedAt")
         val position = journey.optJSONObject("position")
         val freshObservation = freshness == "live" && observed != null && runCatching {
@@ -146,8 +154,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         val status = when {
             cachedAt != null -> "STALE · LAST KNOWN"
             freshness == "stale" -> "STALE · LAST KNOWN"
-            expected != null && freshObservation -> "PREDICTED · LIVE INPUT"
-            expected != null -> "PREDICTED · ${freshness.uppercase()} INPUT"
+            hasForecast && freshObservation -> "PREDICTED · LIVE INPUT"
+            hasForecast -> "PREDICTED · ${freshness.uppercase()} INPUT"
             freshObservation -> "OBSERVED · ETA UNAVAILABLE"
             else -> "SCHEDULED · NO LIVE ETA"
         }
@@ -157,7 +165,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 val minutes = ((System.currentTimeMillis() - cachedAt) / 60_000).coerceAtLeast(0)
                 "Last saved $minutes min ago from $provider. Live refresh unavailable."
             }
-            expected != null -> "$provider · forecast updated from ${prediction.optString("source", "unknown")} data"
+            hasForecast -> "$provider · forecast updated from ${prediction.optString("source", "unknown")} data"
             freshObservation -> "$provider · position observed; ETA unavailable"
             else -> "$provider · timetable only; no current ETA"
         }
@@ -169,11 +177,11 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             destinationCode = journey.getString("destinationCode"),
             destinationName = journey.getString("destinationName"),
             departure = railTime(journey.getString("departureTime")),
-            arrival = railTime(expected ?: journey.getString("scheduledArrival")),
-            arrivalDay = dayOffset(journey.getString("departureTime"), expected ?: journey.getString("scheduledArrival")),
+            arrival = railTime(if (hasForecast) expected else journey.getString("scheduledArrival")),
+            arrivalDay = if (forecastEnd != null) RailClockSequence.dayNumber(originDate, forecastEnd)
+                else dayOffset(journey.getString("departureTime"), journey.getString("scheduledArrival")),
             geometry = geometry,
-            calls = (0 until stops.length()).map { i ->
-                val stop = stops.getJSONObject(i)
+            calls = stopObjects.mapIndexed { i, stop ->
                 val forecast = stop.optJSONObject("forecast")
                 RouteStop(
                     code = stop.getString("code"),
@@ -191,8 +199,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                     fallbackReason = forecast?.stringOrNull("fallbackReason"),
                     platform = stop.stringOrNull("platform"),
                     distanceKm = if (stop.isNull("distanceKm")) null else stop.optDouble("distanceKm"),
-                    scheduledArrivalMillis = stop.stringOrNull("scheduledArrival")?.let(::instantMillis),
-                    scheduledDepartureMillis = stop.stringOrNull("scheduledDeparture")?.let(::instantMillis),
+                    scheduledArrivalMillis = scheduledTimes[i].arrivalMillis,
+                    scheduledDepartureMillis = scheduledTimes[i].departureMillis,
                 )
             },
             distanceKm = journey.optDouble("distanceKm", 0.0),
@@ -202,10 +210,10 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             runDate = originDate,
             statusLabel = status,
             sourceDetail = source,
-            etaBand = if (expected != null && lower != null && upper != null)
+            etaBand = if (hasForecast && lower != null && upper != null)
                 "${if (cachedAt != null) "Last forecast · " else ""}P10 ${railTime(lower)} · P50 ${railTime(expected)} · P90 ${railTime(upper)}" else null,
-            departureInstantMillis = instantMillis(journey.getString("departureTime")),
-            arrivalInstantMillis = instantMillis(journey.getString("scheduledArrival")),
+            departureInstantMillis = scheduledTimes.firstOrNull()?.departureMillis ?: instantMillis(journey.getString("departureTime")),
+            arrivalInstantMillis = scheduledEnd,
             positionProgress = if (freshObservation || cachedAt != null)
                 position?.optDouble("progress")?.takeIf { it.isFinite() && it in 0.0..1.0 } else null,
             positionStatus = if (cachedAt != null) "Last known position · stale"
@@ -267,6 +275,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 connection.connectTimeout = 12_000
                 connection.readTimeout = 12_000
                 connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("User-Agent", "LocomateNative/1.0")
                 if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
                 if (body != null) {
                     connection.doOutput = true
@@ -278,8 +287,12 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                     ?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (status !in 200..299) {
                     val error = runCatching { JSONObject(responseText).optJSONObject("error") }.getOrNull()
-                    throw GatewayError(error?.optString("message")?.takeIf { it.isNotBlank() }
-                        ?: "Rail service unavailable ($status).", status)
+                    val code = error?.optString("code").orEmpty()
+                    val message = if (code.startsWith("invalid_provider") || code.startsWith("provider_"))
+                        "The rail feed is temporarily unavailable. Try again shortly."
+                    else error?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: "Rail service unavailable ($status)."
+                    throw GatewayError(message, status)
                 }
                 JSONObject(responseText)
             } finally {

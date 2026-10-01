@@ -1,6 +1,7 @@
 package app.locomate.data
 
 import android.content.Context
+import app.locomate.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -69,11 +70,14 @@ data class PassportMetrics(
 }
 
 class SavedJourneyStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences("locomate.passport", Context.MODE_PRIVATE)
+    private val scope = railStorageScope(BuildConfig.RAIL_API_URL)
+    private val preferences = context.applicationContext.getSharedPreferences("locomate.passport.$scope", Context.MODE_PRIVATE)
+    private val legacy = context.applicationContext.getSharedPreferences("locomate.passport", Context.MODE_PRIVATE)
 
     fun load(): List<SavedJourney> = runCatching {
-        val json = JSONArray(preferences.getString("journeys_v1", "[]"))
-        (0 until json.length()).map { index ->
+        val scoped = preferences.getString("journeys_v1", null)
+        val json = JSONArray(scoped ?: if (scope == "preview") legacy.getString("journeys_v1", "[]") else "[]")
+        val parsed = (0 until json.length()).map { index ->
             val item = json.getJSONObject(index)
             SavedJourney(
                 key = item.getString("key"), trainNumber = item.getString("trainNumber"),
@@ -86,6 +90,8 @@ class SavedJourneyStore(context: Context) {
                 preview = item.optBoolean("preview", false),
             )
         }
+        if (scoped == null && scope == "preview") parsed.filter(SavedJourney::preview).also(::save)
+        else parsed
     }.getOrDefault(emptyList())
 
     fun save(journeys: List<SavedJourney>) {

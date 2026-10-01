@@ -134,6 +134,7 @@ fun RootView() {
                     saved = selectedRoute?.let { SavedJourney.from(it, selectedPlan ?: JourneyPlan.default(it)).key in savedJourneys.map(SavedJourney::key) } ?: false,
                     message = journeyMessage,
                     onEdit = { editingJourney = true },
+                    onSearch = { searchOpen = true },
                     onCalendar = {
                         selectedRoute?.let { route ->
                             val board = route.calls.firstOrNull { it.code == selectedPlan?.boardingCode }

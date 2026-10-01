@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -64,7 +65,8 @@ import kotlin.math.roundToInt
 @Composable
 fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolean, productionMode: Boolean = false,
                   message: String? = null, onSave: () -> Unit,
-                  onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {}) {
+                  onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
+                  onSearch: () -> Unit = {}) {
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
     val boarding = route?.calls?.firstOrNull { it.code == segment?.boardingCode }
     val alighting = route?.calls?.firstOrNull { it.code == segment?.alightingCode }
@@ -158,8 +160,28 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
                 ) {
+                    if (route == null) {
+                        Spacer(Modifier.height(15.dp))
+                        Text("Every journey starts here.", color = LM.Ink, fontSize = 29.sp,
+                            fontWeight = FontWeight.Bold, lineHeight = 33.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Text(message ?: "Find a train and choose its India origin date to see the route, station times and source of every update.",
+                            color = LM.Ink2, fontSize = 15.sp, lineHeight = 22.sp)
+                        Spacer(Modifier.height(24.dp))
+                        Surface(onClick = onSearch, color = LM.Accent, shape = RoundedCornerShape(17.dp),
+                            modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(17.dp), horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.Black,
+                                    modifier = Modifier.size(20.dp))
+                                Text("Find your train", color = Color.Black, fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(160.dp))
+                    } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (route == null) "Route pack unavailable" else "${route.trainNumber} · ${route.displayName}",
+                        Text(if (route == null) "No journey selected" else "${route.trainNumber} · ${route.displayName}",
                             color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(route?.statusLabel ?: "SEARCH TO START", color = if (route?.isPreview == true) Color(0xFFBCA7FF) else LM.Accent,
                             fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -203,12 +225,15 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         }
                     }
                     Spacer(Modifier.height(18.dp))
-                    Surface(color = if (route?.isPreview != false) Color(0xFF24202F) else Color(0xFF172532),
+                    Surface(color = if (route?.isPreview == true) Color(0xFF24202F) else Color(0xFF172532),
                         shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Outlined.Info, contentDescription = null, tint = Color(0xFFBCA7FF), modifier = Modifier.size(20.dp))
-                            Text(if (route?.isPreview != false) "Route replay uses historical sample data. Nothing here is live."
-                                else "${route.statusLabel}. ${route.sourceDetail}", color = LM.Ink2,
+                            Text(when {
+                                route == null -> "Search for a dated train run to see its status."
+                                route.isPreview -> "Route replay uses historical sample data. Nothing here is live."
+                                else -> "${route.statusLabel}. ${route.sourceDetail}"
+                            }, color = LM.Ink2,
                                 fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(start = 11.dp))
                         }
                     }
@@ -247,6 +272,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         TimelineStop(stop, route?.isPreview == true, route?.statusLabel?.startsWith("STALE") == true, index == 0)
                     }
                     Spacer(Modifier.height(160.dp))
+                    }
                 }
             }
         }

@@ -25,6 +25,8 @@ The client obtains a short-lived device session from the gateway and sends no pr
 
 Passport stores a local summary of a saved run, without PNR, seat, or personal location. Historical previews are listed separately and excluded from saved-run distance. Missing route distance remains unavailable rather than being reported as zero.
 
+Cached runs, Passport entries, and personal stop choices are scoped to the configured gateway origin. Debug loopback fixtures cannot be reopened as production data. A gateway failure only uses a cached run from that same origin.
+
 The journey timeline displays scheduled, observed, predicted, and stale stop times with explicit source labels. Available stop forecasts show their P10/P50/P90 band and fallback reason.
 
 Boarding and alighting stops can be selected for each preview route or dated run. The selection is private to the device and is restored from a saved Passport segment. Passport uses known station distance for a partial journey and leaves unknown distance or duration unavailable.
