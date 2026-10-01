@@ -80,6 +80,7 @@ class JourneyStatusNotification(context: Context) {
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
+            .setTimeoutAfter(10 * 60_000L)
             .addExtras(Bundle().apply { putString(KEY_SCOPE, scope) })
             .build()
 
