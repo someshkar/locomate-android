@@ -29,6 +29,8 @@ data class TrainSearchResult(
     val destinationCode: String,
     val destinationName: String,
     val live: Boolean,
+    val sourceLabel: String = "Railway catalogue",
+    val distanceKm: Double = 0.0,
 )
 
 data class NetworkBounds(val west: Double, val south: Double, val east: Double, val north: Double) {
@@ -151,6 +153,8 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                 train.getString("originCode"), train.getString("originName"),
                 train.getString("destinationCode"), train.getString("destinationName"),
                 train.optBoolean("live", false),
+                train.optString("sourceLabel").trim().ifBlank { "Railway catalogue" },
+                train.optDouble("distanceKm", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
             )
         }
     }

@@ -10,6 +10,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -73,8 +76,8 @@ class CompletionActionsTest {
             dateField.performTextReplacement("2026-09-30")
             dateField.performImeAction()
             compose.waitUntil(5_000) { keyboardHeight() == 0 }
-            awaitText("12951 · First Express")
-            val result = compose.onNodeWithText("12951 · First Express").performScrollTo().assertIsDisplayed()
+            awaitText("First Express")
+            val result = compose.onNodeWithText("First Express").performScrollTo().assertIsDisplayed()
             assertTrue("Result overlaps navigation", result.fetchSemanticsNode().boundsInRoot.bottom
                 < compose.onNodeWithContentDescription("Search trains").fetchSemanticsNode().boundsInRoot.top)
             screenshot("search-result")
@@ -108,27 +111,59 @@ class CompletionActionsTest {
             compose.setContent { LocomateTheme {
                 SearchScreen(emptyList(), gateway, {}, { train, _ -> selected = train.number })
             } }
+            enterQuery("1")
+            compose.onNodeWithText("Searching…").assertDoesNotExist()
+            compose.onNodeWithText("No matching trains found.").assertDoesNotExist()
             enterQuery("12951")
-            awaitText("12951 · First Express")
+            awaitText("First Express")
             enterQuery("12137")
             compose.waitUntil(5_000) { server.heldRequest.count == 0L }
             compose.onNodeWithText("Searching…").assertExists()
-            compose.onNodeWithText("12951 · First Express").assertDoesNotExist()
+            compose.onNodeWithText("First Express").assertDoesNotExist()
             compose.runOnIdle { assertNull(selected) }
 
             enterQuery("")
             compose.onNodeWithText("Searching…").assertDoesNotExist()
-            compose.onNodeWithText("12951 · First Express").assertDoesNotExist()
+            compose.onNodeWithText("First Express").assertDoesNotExist()
             // Finish the canceled request after a third query has taken ownership.
             enterQuery("54321")
             server.releaseRequest.countDown()
-            awaitText("54321 · Current Express")
+            awaitText("Current Express")
             assertTrue(server.completedQueries.contains("12137"))
-            compose.onNodeWithText("12137 · Held Express").assertDoesNotExist()
-            compose.onNodeWithText("12951 · First Express").assertDoesNotExist()
+            compose.onNodeWithText("Held Express").assertDoesNotExist()
+            compose.onNodeWithText("First Express").assertDoesNotExist()
             compose.onNodeWithText("Searching…").assertDoesNotExist()
-            compose.onNodeWithText("54321 · Current Express").performScrollTo().performClick()
-            compose.runOnIdle { assertEquals("54321", selected) }
+            compose.onNodeWithText("Current Express").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals("54321", selected)
+                assertFalse(server.completedQueries.contains("1"))
+            }
+        }
+    }
+
+    @Test fun failedSearchRetriesTheSameQueryAndRetainsCatalogueProvenance() {
+        SearchGateway(failFirstSearch = true).use { server ->
+            val gateway = RailGateway(compose.activity, server.url)
+            var selected: app.locomate.data.TrainSearchResult? = null
+            compose.setContent { LocomateTheme {
+                SearchScreen(emptyList(), gateway, {}, { train, _ -> selected = train })
+            } }
+            enterQuery("12951")
+            awaitText("The rail feed is temporarily unavailable. Try again shortly.")
+            compose.onNodeWithText("First Express").assertDoesNotExist()
+            compose.onNodeWithText("Try again").performScrollTo().assertIsEnabled().performClick()
+            awaitText("First Express")
+            compose.onNodeWithText("Historical railway snapshot").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("1,384 km").assertExists()
+            compose.onNodeWithText("Try again").assertDoesNotExist()
+            screenshot("search-recovered-source")
+            compose.onNodeWithText("First Express").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(listOf("12951", "12951"), server.completedQueries.toList())
+                assertEquals("12951", selected?.number)
+                assertEquals("Historical railway snapshot", selected?.sourceLabel)
+                assertEquals(1384.0, selected?.distanceKm)
+            }
         }
     }
 
@@ -160,6 +195,10 @@ class CompletionActionsTest {
         .performScrollTo().performTextReplacement(query)
 
     private fun awaitText(text: String) = compose.waitUntil(8_000) {
+        // Search rows are lazy. Reveal actual list content before testing its native action.
+        if (compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()) {
+            runCatching { compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text)) }
+        }
         compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
     }
 
@@ -168,7 +207,7 @@ class CompletionActionsTest {
 }
 
 /** Delays one actual HTTP result so the Compose cancellation path is deterministic. */
-private class SearchGateway : AutoCloseable {
+private class SearchGateway(private val failFirstSearch: Boolean = false) : AutoCloseable {
     val heldRequest = CountDownLatch(1)
     val releaseRequest = CountDownLatch(1)
     val completedQueries = CopyOnWriteArrayList<String>()
@@ -189,6 +228,7 @@ private class SearchGateway : AutoCloseable {
                     }
                     repeat(length) { input.read() }
                     val query = target.substringAfter("?q=", "")
+                    val failing = failFirstSearch && target.startsWith("/v1/trains/search") && completedQueries.isEmpty()
                     if (query == "12137") {
                         heldRequest.countDown()
                         releaseRequest.await(10, TimeUnit.SECONDS)
@@ -198,10 +238,11 @@ private class SearchGateway : AutoCloseable {
                     else {
                         completedQueries += query
                         val name = when (query) { "12951" -> "First Express"; "12137" -> "Held Express"; else -> "Current Express" }
-                        """{"trains":[{"number":"$query","name":"$name","originCode":"A","originName":"Origin","destinationCode":"C","destinationName":"Destination","live":false}]}"""
+                        if (failing) """{"error":{"code":"provider_unavailable","message":"The railway feed is temporarily unavailable."}}"""
+                        else """{"trains":[{"number":"$query","name":"$name","originCode":"A","originName":"Origin","destinationCode":"C","destinationName":"Destination","live":false,"sourceLabel":"Historical railway snapshot","distanceKm":1384}]}"""
                     }.toByteArray()
                     connection.getOutputStream().apply {
-                        write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                        write("HTTP/1.1 ${if (failing) "503 Service Unavailable" else "200 OK"}\r\nContent-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
                         write(payload)
                         flush()
                     }

@@ -146,7 +146,7 @@ class CoreAccessibilityTest {
         assertVisibleTextFits()
         field.performImeAction()
         compose.waitUntil(15_000) { glass.snapshot != null }
-        val result = compose.onNodeWithText("${train.trainNumber} · ${train.name}", useUnmergedTree = true)
+        val result = compose.onNodeWithText(train.name, useUnmergedTree = true)
             .performScrollTo().assertIsDisplayed().tryPerformAccessibilityChecks()
         val layouts = mutableListOf<TextLayoutResult>()
         result.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
