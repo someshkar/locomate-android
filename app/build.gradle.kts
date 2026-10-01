@@ -16,13 +16,18 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-        val railApiUrl = providers.gradleProperty("LOCOMATE_RAIL_API_URL").orNull.orEmpty()
-        buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
     }
 
     buildTypes {
+        getByName("debug") {
+            val railApiUrl = providers.gradleProperty("LOCOMATE_RAIL_API_URL").orNull.orEmpty()
+            buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
+        }
         release {
             isMinifyEnabled = false
+            val railApiUrl = providers.gradleProperty("LOCOMATE_RAIL_API_URL").orNull
+                ?: "https://rail-intelligence-gateway.rail-intelligence-gateway.workers.dev"
+            buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
         }
     }
 

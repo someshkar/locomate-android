@@ -19,7 +19,7 @@ GitHub Actions runs the unit tests and APK build for each pull request. The Andr
 
 ## Rail data modes
 
-With no gateway URL, the app opens in an explicit historical route-preview mode. Preview packs never claim a live position or ETA. Configure production with a Gradle property:
+Debug builds open in an explicit historical route-preview mode unless a gateway URL is supplied. Preview packs never claim a live position or ETA. Release builds target the deployed SmartRail rail gateway by default. To override either build type, use a Gradle property:
 
 ```sh
 ./gradlew :app:assembleDebug -PLOCOMATE_RAIL_API_URL=https://your-gateway.example
