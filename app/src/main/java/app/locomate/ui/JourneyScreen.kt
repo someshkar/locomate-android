@@ -117,10 +117,14 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
         val density = LocalDensity.current
         val screenHeightPx = with(density) { maxHeight.toPx() }
-        val collapsedTop = screenHeightPx * 0.47f
         val expandedTop = screenHeightPx * 0.10f
+        val standardCollapsedTop = screenHeightPx * 0.47f
+        val collapsedTop = if (route == null) minOf(standardCollapsedTop,
+            with(density) { (maxHeight - 520.dp).toPx() }.coerceAtLeast(expandedTop)) else standardCollapsedTop
         val largeText = density.fontScale >= 1.5f
-        var sheetTop by remember(screenHeightPx, largeText) { mutableFloatStateOf(if (largeText) expandedTop else collapsedTop) }
+        var sheetTop by remember(screenHeightPx, largeText, route == null) {
+            mutableFloatStateOf(if (largeText) expandedTop else collapsedTop)
+        }
         RailMap(route, attribution = mapAttribution, journeyCamera = journeyCamera,
             sheetVisibleHeight = screenHeightPx - sheetTop,
             accessibilityViewport = Rect(0f, 0f, with(density) { maxWidth.toPx() }, sheetTop))
