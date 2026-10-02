@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -41,6 +42,19 @@ import kotlin.math.roundToInt
 class JourneyMapControlsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
+
+    @Test fun emptyJourneySearchActionIsVisibleAboveTheDockWithoutScrolling() {
+        compose.setContent { LocomateTheme {
+            NavigationScaffold(Tab.Journeys, {}, {}) { inset ->
+                JourneyScreen(null, saved = false, onSave = {}, bottomInset = inset)
+            }
+        } }
+        val action = compose.onNodeWithText("Find your train").assertIsDisplayed()
+        val dockTop = compose.onNodeWithContentDescription("Journeys")
+            .fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Find your train must be above the dock on first load",
+            action.fetchSemanticsNode().boundsInRoot.bottom <= dockTop)
+    }
 
     @Test fun mapAccessibilityFocusStopsAtTheJourneySheet() {
         val route = PreviewRoutes.load(compose.activity).first()
