@@ -170,6 +170,8 @@ Results and Perfetto traces are copied under `macrobenchmark/build/outputs/conne
 
 Emulator timing cannot establish the 400ms cold-start or 120Hz targets.
 
+On 2026-10-02, the API 36 emulator completed all ten cold-start and ten Search open/return iterations without interaction failures. Its cold-start median was **750 ms**; the Search trace recorded **24 ms median / 82 ms P95 CPU frame duration** and **11 ms median / 113 ms P95 frame overrun**. The results and ten Search Perfetto traces are under `macrobenchmark/build/outputs/connected_android_test_additional_output/benchmark/connected/`. These emulator figures identify a workload to profile on a physical device; they are not evidence that either release target is met.
+
 On 2026-10-01, the new Journey drag/scroll/collapse dry run passed on the Android 36 emulator. Its gestures avoid the floating dock, and the test checks changed visible content rather than treating UiAutomator's “can still scroll” result as evidence of movement. This verifies the workload path only; physical frame, startup, and memory baselines remain unmeasured.
 
 For live debug profiling on a device, enable JankStats before launching the Debug app:
