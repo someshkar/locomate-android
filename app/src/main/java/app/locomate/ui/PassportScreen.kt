@@ -140,7 +140,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                     }, color = Color.White,
                         fontSize = if (distance != null && savedRuns.isNotEmpty()) 56.sp else 29.sp,
                         fontWeight = FontWeight.ExtraBold, lineHeight = if (distance != null) 60.sp else 36.sp,
-                        letterSpacing = (-2).sp)
+                        letterSpacing = if (savedRuns.isEmpty()) 0.sp else (-2).sp)
                     Spacer(Modifier.height(10.dp))
                     Text(if (savedRuns.isNotEmpty()) "Distance in saved runs. This is not verified travel history."
                         else if (metrics.previewCount > 0) "${metrics.previewCount} sample route${if (metrics.previewCount == 1) "" else "s"} saved separately. Preview routes are not counted as travel."
