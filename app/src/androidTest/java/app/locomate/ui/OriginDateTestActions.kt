@@ -10,6 +10,9 @@ internal fun openOriginDateInput(compose: ComposeContentTestRule, beforeInput: (
     }
     compose.onNodeWithContentDescription("Choose origin date").performScrollTo().performClick()
     beforeInput()
+    compose.waitUntil(timeoutMillis = 5_000) {
+        compose.onAllNodesWithText("Enter date").fetchSemanticsNodes().isNotEmpty()
+    }
     compose.onNodeWithText("Enter date").performScrollTo().performClick()
     return compose.onNode(hasSetTextAction() and hasAnyAncestor(isDialog()))
 }

@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import app.locomate.BuildConfig
 import app.locomate.MainActivity
 import app.locomate.R
@@ -38,12 +39,7 @@ class JourneyStatusNotification(
     }
 
     private fun activeRunLocked(): ActiveRun? {
-        val active = manager.activeNotifications.firstOrNull { it.id == NOTIFICATION_ID && it.tag == null } ?: run {
-            clearStoredRun()
-            return null
-        }
-        if (StatusPushWork.deleting(appContext) || !notificationsAllowed() ||
-            active.notification.extras.getString(KEY_SCOPE) != scope) {
+        if (StatusPushWork.deleting(appContext) || !notificationsAllowed()) {
             cancelLocked()
             return null
         }
@@ -53,11 +49,28 @@ class JourneyStatusNotification(
         val expiresAt = preferences.getLong(KEY_EXPIRES_AT, 0L)
         val link = runId?.let(JourneyAlertLink::fromRunId)
         if (link == null || trainNumber != link.trainNumber || originDate != link.serviceDate ||
-            expiresAt <= nowMillis() || active.notification.extras.getString(KEY_RUN_ID) != runId) {
+            expiresAt <= nowMillis()) {
             cancelLocked()
             return null
         }
-        return ActiveRun(link.runId, link.trainNumber, link.serviceDate)
+        val active = manager.activeNotifications.firstOrNull { it.id == NOTIFICATION_ID && it.tag == null }
+        if (active?.notification?.extras?.getString(KEY_SCOPE) == scope &&
+            active.notification.extras.getString(KEY_RUN_ID) == runId) {
+            publishingRunId = null
+            publishingPreviousRunId = null
+            return ActiveRun(link.runId, link.trainNumber, link.serviceDate)
+        }
+        // NotificationManager publishes replacement cards asynchronously. Keep the just-posted
+        // run until its notification appears. A foreign card is never accepted as an old one.
+        val previousCardIsStillVisible = publishingPreviousRunId != null &&
+            active?.notification?.extras?.getString(KEY_SCOPE) == scope &&
+            active.notification.extras.getString(KEY_RUN_ID) == publishingPreviousRunId
+        if (publishingRunId == runId && SystemClock.uptimeMillis() < publishingUntilUptime &&
+            (active == null || previousCardIsStillVisible)) {
+            return ActiveRun(link.runId, link.trainNumber, link.serviceDate)
+        }
+        cancelLocked()
+        return null
     }
 
     /** Only a direct user action may start or restart a status card. */
@@ -164,6 +177,9 @@ class JourneyStatusNotification(
                 }.commit()) return false
         return try {
             manager.notify(NOTIFICATION_ID, notification)
+            publishingRunId = active.runId
+            publishingPreviousRunId = previousRunId
+            publishingUntilUptime = SystemClock.uptimeMillis() + PUBLICATION_GRACE_MILLIS
             StatusPushWork.scheduleExpiryCheck(appContext)
             true
         } catch (_: SecurityException) {
@@ -197,6 +213,8 @@ class JourneyStatusNotification(
 
     private fun cancelLocked() {
         manager.cancel(NOTIFICATION_ID)
+        publishingRunId = null
+        publishingPreviousRunId = null
         clearStoredRun()
     }
 
@@ -211,6 +229,10 @@ class JourneyStatusNotification(
         const val CHANNEL_ID = "active-journey"
         const val NOTIFICATION_ID = 1001
         const val CARD_LIFETIME_MILLIS = 10 * 60_000L
+        const val PUBLICATION_GRACE_MILLIS = 10_000L
+        var publishingRunId: String? = null
+        var publishingPreviousRunId: String? = null
+        var publishingUntilUptime: Long = 0L
         const val KEY_RUN_ID = "runId"
         const val KEY_TRAIN = "trainNumber"
         const val KEY_DATE = "originDate"

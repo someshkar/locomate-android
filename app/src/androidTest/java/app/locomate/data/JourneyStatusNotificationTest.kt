@@ -53,6 +53,8 @@ class JourneyStatusNotificationTest {
         try {
             assertTrue(card.enable(route))
             assertNotificationLink(context, route)
+            // Android may rate-limit an update posted within a second of the initial card.
+            Thread.sleep(1_200)
             val now = System.currentTimeMillis()
             val update = mapOf(
                 "event" to "update", "runId" to runId,
@@ -187,9 +189,12 @@ class JourneyStatusNotificationTest {
             assertFalse(card.enable(route.copy(receivedAtMillis = null)))
             assertFalse(card.enable(route.copy(receivedAtMillis = now + 60_001)))
             assertTrue(card.enable(route))
+            // The fake clock advances nine minutes instantly, but Android may drop notification
+            // updates posted within one real second of the initial card.
+            Thread.sleep(1_200)
             now += 9 * 60_000L
             assertTrue(card.refresh(route))
-            val refreshedDeadline = android.os.SystemClock.uptimeMillis() + 2_000
+            val refreshedDeadline = android.os.SystemClock.uptimeMillis() + 10_000
             while (manager.activeNotifications.single { it.id == 1001 && it.tag == null }
                     .notification.timeoutAfter != 60_000L &&
                 android.os.SystemClock.uptimeMillis() < refreshedDeadline) {
@@ -238,8 +243,14 @@ class JourneyStatusNotificationTest {
         val expected = PendingIntent.getActivity(context, 1001, expectedIntent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
         assertNotNull(expected)
-        val visible = context.getSystemService(NotificationManager::class.java).activeNotifications
-            .single { it.id == 1001 && it.tag == null }
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+        var visible = manager.activeNotifications.single { it.id == 1001 && it.tag == null }
+        while (visible.notification.contentIntent != expected &&
+            android.os.SystemClock.uptimeMillis() < deadline) {
+            Thread.sleep(20)
+            visible = manager.activeNotifications.single { it.id == 1001 && it.tag == null }
+        }
         assertEquals(expected, visible.notification.contentIntent)
     }
 
