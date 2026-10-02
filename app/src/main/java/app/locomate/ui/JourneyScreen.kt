@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -121,7 +122,8 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         val largeText = density.fontScale >= 1.5f
         var sheetTop by remember(screenHeightPx, largeText) { mutableFloatStateOf(if (largeText) expandedTop else collapsedTop) }
         RailMap(route, attribution = mapAttribution, journeyCamera = journeyCamera,
-            sheetVisibleHeight = screenHeightPx - sheetTop)
+            sheetVisibleHeight = screenHeightPx - sheetTop,
+            accessibilityViewport = Rect(0f, 0f, with(density) { maxWidth.toPx() }, sheetTop))
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(

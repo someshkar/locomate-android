@@ -3,6 +3,7 @@ package app.locomate.ui
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +46,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** Native map surface. The sample corridor is shown only in explicit preview mode. */
 @Composable
@@ -59,6 +61,7 @@ fun RailMap(
     journeyCamera: JourneyMapController? = null,
     sheetVisibleHeight: Float = 0f,
     visibleViewport: Rect? = null,
+    accessibilityViewport: Rect? = visibleViewport,
 ) {
     // MapLibre initialization can block the UI thread. Draw the sheet and dark
     // map placeholder first, then create the native map on the following frame.
@@ -77,6 +80,7 @@ fun RailMap(
     val mapGlass = LocalMapGlass.current
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
     val currentViewport = rememberUpdatedState(visibleViewport)
+    val currentAccessibilityViewport = rememberUpdatedState(accessibilityViewport)
     val currentRoute = rememberUpdatedState(route)
     val currentNetworkTrains = rememberUpdatedState(networkTrains)
     val currentTrainSelection = rememberUpdatedState(onNetworkTrainSelected)
@@ -94,7 +98,23 @@ fun RailMap(
     val viewportSync = remember(route?.trainNumber, route?.runDate) { MapViewportSync() }
     val mapView = remember(route?.trainNumber, route?.runDate) {
         MapLibre.getInstance(context)
-        MapView(context).apply {
+        object : MapView(context) {
+            override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(info)
+                // The GL surface fills the screen for the glass backdrop, but
+                // only its exposed strip should receive accessibility focus.
+                val viewport = currentAccessibilityViewport.value ?: return
+                val bounds = android.graphics.Rect()
+                info.getBoundsInScreen(bounds)
+                if (!bounds.intersect(
+                    bounds.left + viewport.left.roundToInt(),
+                    bounds.top + viewport.top.roundToInt(),
+                    bounds.left + viewport.right.roundToInt(),
+                    bounds.top + viewport.bottom.roundToInt(),
+                )) bounds.setEmpty()
+                info.setBoundsInScreen(bounds)
+            }
+        }.apply {
             setBackgroundColor(android.graphics.Color.rgb(6, 7, 8))
             onCreate(null)
             getMapAsync { map ->

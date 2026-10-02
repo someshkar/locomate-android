@@ -1,6 +1,7 @@
 package app.locomate.ui
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
@@ -33,11 +34,41 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class JourneyMapControlsTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @Before fun configureWindow() = configureEdgeToEdgeTestWindow(compose.activity)
+
+    @Test fun mapAccessibilityFocusStopsAtTheJourneySheet() {
+        val route = PreviewRoutes.load(compose.activity).first()
+        compose.setContent { LocomateTheme {
+            NavigationScaffold(Tab.Journeys, {}, {}) { inset ->
+                JourneyScreen(route, saved = false, onSave = {}, bottomInset = inset)
+            }
+        } }
+        compose.waitUntil(15_000) { findMap(compose.activity.window.decorView) != null }
+        val map = requireNotNull(findMap(compose.activity.window.decorView))
+        fun focusBounds(): Rect {
+            val result = Rect()
+            compose.runOnUiThread { map.createAccessibilityNodeInfo().getBoundsInScreen(result) }
+            return result
+        }
+
+        val collapsed = focusBounds()
+        val collapsedSheetTop = compose.onNodeWithContentDescription("Expand journey details")
+            .fetchSemanticsNode().boundsInRoot.top.roundToInt()
+        assertTrue("Map focus extends beneath the collapsed sheet", abs(collapsed.bottom - collapsedSheetTop) <= 2)
+
+        compose.onNodeWithContentDescription("Expand journey details").performClick()
+        compose.waitUntil(5_000) { abs(focusBounds().bottom - map.height * 0.10f) <= 3f }
+        val expanded = focusBounds()
+        val expandedSheetTop = compose.onNodeWithContentDescription("Collapse journey details")
+            .fetchSemanticsNode().boundsInRoot.top.roundToInt()
+        assertTrue("Map focus extends beneath the expanded sheet", abs(expanded.bottom - expandedSheetTop) <= 2)
+    }
 
     @Test fun nativeGlassSnapshotFollowsCameraAndClearsWhenTheActivityStops() {
         var route by mutableStateOf(PreviewRoutes.load(compose.activity).first())
