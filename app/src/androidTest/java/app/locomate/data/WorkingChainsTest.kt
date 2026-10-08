@@ -9,6 +9,33 @@ import java.security.MessageDigest
 import app.locomate.BuildConfig
 
 class WorkingChainsTest {
+    @Test fun sharedEnrichedFixturesKeepDatedLinksAndSeparatePhysicalEvidenceFromInference() {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        fun fixture(name: String) = JSONObject(assets.open("contracts/rail-api/v1/$name").bufferedReader().use { it.readText() })
+        val operational = OperationalChain.decode(fixture("operational-working-enriched.json"), "12345", "2026-08-24")
+        assertEquals("inferred", operational.mode)
+        assertTrue(operational.disclaimer.contains("does not verify physical identity"))
+        assertTrue(operational.linkage!!.contains("possible-same-rake"))
+        assertEquals(listOf("2026-08-23", "2026-08-24", "2026-08-25"), operational.runs.map { it.second.date })
+        val physical = PhysicalChain.decode(fixture("physical-chain-enriched.json"), "12345", "2026-08-24")
+        val rake = physical.assets.first { it.kind == "rake" }
+        assertEquals("available", rake.state)
+        assertEquals("synthetic-test-operator", rake.evidence.source)
+        assertEquals(0.94, rake.evidence.confidence!!, 0.0)
+        assertEquals(listOf("2026-08-23", "2026-08-24", "2026-08-25"), rake.runs.map { it.second.date })
+        assertEquals("confirmed", rake.inbound.state)
+        val mutations: List<(JSONObject) -> Unit> = listOf(
+            { it.getJSONObject("rake").getJSONObject("current").put("runId", "run:54321:2026-08-24") },
+            { it.getJSONObject("rake").getJSONObject("current").put("serviceDate", "2026-08-25") },
+            { it.getJSONObject("rake").getJSONObject("current").put("status", "live") },
+            { it.getJSONObject("rake").getJSONObject("current").put("scheduledEndAt", 1) },
+            { it.getJSONObject("rake").getJSONObject("current").put("scheduledOutboundDepartureAt", -1) },
+            { it.getJSONObject("rake").getJSONObject("current").getJSONObject("inboundTerminalArrival").put("predictedAt", -1) }
+        )
+        mutations.forEachIndexed { index, mutation -> assertTrue("Physical mutation $index must reject", runCatching {
+            PhysicalChain.decode(fixture("physical-chain-enriched.json").also(mutation), "12345", "2026-08-24")
+        }.isFailure) }
+    }
     @Test fun physicalUnavailableFixtureNeverInventsIdentityAndRejectsAnotherDatedRun() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val text = instrumentation.context.assets.open("contracts/rail-api/v1/physical-chain-unavailable.json")
@@ -25,6 +52,72 @@ class WorkingChainsTest {
         }
         assertTrue(runCatching { PhysicalChain.decode(JSONObject(text), "54321", "2026-08-24") }.isFailure)
         assertTrue(runCatching { PhysicalChain.decode(JSONObject(text), "12345", "2026-08-25") }.isFailure)
+    }
+
+    @Test fun physicalDecoderRejectsInvalidStatesConfidenceAndNoncanonicalCurrentIdentity() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        fun fixture() = JSONObject(instrumentation.context.assets.open("contracts/rail-api/v1/physical-chain-unavailable.json")
+            .bufferedReader().use { it.readText() })
+        for (bad in listOf("live", "confirmed", "invented")) {
+            assertTrue(runCatching { PhysicalChain.decode(fixture().put("state", bad), "12345", "2026-08-24") }.isFailure)
+            assertTrue(runCatching { PhysicalChain.decode(fixture().apply { getJSONObject("rake").put("state", bad) }, "12345", "2026-08-24") }.isFailure)
+        }
+        for (confidence in listOf(-0.01, 1.01)) assertTrue(runCatching {
+            PhysicalChain.decode(fixture().apply { getJSONObject("rake").getJSONObject("assignmentEvidence").put("confidence", confidence) }, "12345", "2026-08-24")
+        }.isFailure)
+        assertTrue(runCatching { PhysicalChain.decode(fixture().put("asOf", -1), "12345", "2026-08-24") }.isFailure)
+        assertTrue(runCatching { PhysicalChain.decode(fixture().apply {
+            getJSONObject("locomotive").getJSONObject("inboundLink").put("reason", "schedule-continuity")
+        }, "12345", "2026-08-24") }.isFailure)
+    }
+
+    @Test fun operationalDecoderRejectsIdentityEnumsAndMissingCurrentRun() {
+        fun fixture() = JSONObject("""{"trainNumber":"12345","originDate":"2026-08-24","availability":"unavailable","mode":"inferred","disclaimer":"Schedule continuity does not prove physical identity","updatedAt":"2026-08-24T00:00:00Z","previous":null,"current":null,"next":null,"linkage":null,"delayAssessment":null,"propagatedDelay":null,"turnaroundRisk":null}""")
+        assertEquals("unavailable", OperationalChain.decode(fixture(), "12345", "2026-08-24").availability)
+        assertTrue(runCatching { OperationalChain.decode(fixture(), "54321", "2026-08-24") }.isFailure)
+        assertTrue(runCatching { OperationalChain.decode(fixture(), "12345", "2026-08-25") }.isFailure)
+        assertTrue(runCatching { OperationalChain.decode(fixture().put("availability", "available"), "12345", "2026-08-24") }.isFailure)
+        assertTrue(runCatching { OperationalChain.decode(fixture().put("mode", "official-physical"), "12345", "2026-08-24") }.isFailure)
+    }
+
+    @Test fun operationalDecoderValidatesEvidenceEnumsGeometryFractionsAndPropagatedIdentity() {
+        fun fixture() = JSONObject("""{"trainNumber":"12345","originDate":"2026-08-24","availability":"available","mode":"inferred","disclaimer":"Schedule continuity is inference","updatedAt":"2026-08-24T00:00:00Z","previous":null,"next":null,
+          "current":{"id":"run:12345:2026-08-24","role":"current","trainNumber":"12345","trainName":"Fixture","originCode":"AAA","destinationCode":"BBB","scheduledDeparture":"12:00","scheduledArrival":"14:00","geometry":{"coordinates":[{"latitude":19,"longitude":73}],"source":"inferred"},"position":{"coordinate":{"latitude":19,"longitude":73},"progress":0.5,"observedAt":"2026-08-24T12:00:00Z","source":"scheduled"}},
+          "linkage":{"claim":"possible-same-rake","confidence":"low","method":"schedule-continuity","caveats":["No confirmed asset"]},
+          "delayAssessment":{"incomingDelayMinutes":10.5,"confidence":"low","summary":"Estimate","evidence":[{"id":"event","kind":"arrival","summary":"Estimate","delayMinutes":10.5,"source":"predicted"}]},
+          "propagatedDelay":{"fromRunId":"run:54321:2026-08-23","toRunId":"run:12345:2026-08-24","minutes":2.5,"explanation":"Estimate","evidenceIds":["event"]},
+          "turnaroundRisk":{"level":"low","scheduledMinutes":60.25,"availableMinutes":49.75,"minimumMinutes":30.5,"summary":"Estimate"}}""")
+        assertEquals("12345", OperationalChain.decode(fixture(), "12345", "2026-08-24").runs.single().second.trainNumber)
+        val mutations: List<(JSONObject) -> Unit> = listOf(
+            { it.getJSONObject("current").put("id", "12345:2026-08-24") },
+            { it.getJSONObject("current").getJSONObject("position").put("progress", 1.1) },
+            { it.getJSONObject("current").getJSONObject("geometry").getJSONArray("coordinates").getJSONObject(0).put("latitude", 90.1) },
+            { it.getJSONObject("current").getJSONObject("geometry").put("source", "community") },
+            { it.getJSONObject("linkage").put("confidence", "confirmed") },
+            { it.getJSONObject("linkage").put("method", "physical-number") },
+            { it.getJSONObject("delayAssessment").put("incomingDelayMinutes", "10.5") },
+            { it.getJSONObject("delayAssessment").getJSONArray("evidence").getJSONObject(0).put("source", "inferred") },
+            { it.getJSONObject("propagatedDelay").put("fromRunId", "54321:2026-08-23") },
+            { it.getJSONObject("turnaroundRisk").put("level", "unknown") },
+            { it.put("current", "malformed") }
+        )
+        mutations.forEachIndexed { index, mutation -> assertTrue("Mutation $index must be rejected", runCatching {
+            OperationalChain.decode(fixture().also(mutation), "12345", "2026-08-24")
+        }.isFailure) }
+    }
+
+    @Test fun physicalDecoderValidatesAllNullableTimesAndAssetReasons() {
+        fun fixture() = JSONObject(InstrumentationRegistry.getInstrumentation().context.assets.open("contracts/rail-api/v1/physical-chain-unavailable.json")
+            .bufferedReader().use { it.readText() })
+        for (key in listOf("recordedAt", "ageMs", "expiresAt")) assertTrue(runCatching {
+            PhysicalChain.decode(fixture().apply { getJSONObject("rake").getJSONObject("assignmentEvidence").put(key, -0.5) }, "12345", "2026-08-24")
+        }.isFailure)
+        for (key in listOf("minimumServiceDurationMs", "serviceReadyAt")) assertTrue(runCatching {
+            PhysicalChain.decode(fixture().apply { getJSONObject("rake").getJSONObject("inboundLink").put(key, -0.5) }, "12345", "2026-08-24")
+        }.isFailure)
+        assertTrue(runCatching { PhysicalChain.decode(fixture().apply { getJSONObject("rake").put("assetType", "locomotive") }, "12345", "2026-08-24") }.isFailure)
+        assertTrue(runCatching { PhysicalChain.decode(fixture().apply { getJSONObject("rake").put("unavailableReason", "scheduled") }, "12345", "2026-08-24") }.isFailure)
+        assertTrue(runCatching { PhysicalChain.decode(fixture().apply { getJSONObject("rake").remove("current") }, "12345", "2026-08-24") }.isFailure)
     }
 
     @Test fun publicNumberSubmissionHasExactConsentAndStableRetryIdentity() {

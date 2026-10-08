@@ -111,18 +111,20 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
 
     /** The FCM target is a Firebase Installation ID from the native SDK. */
     suspend fun registerAndroidStatus(runId: String, fcmTarget: String, revision: Long) {
-        require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
+        require(JourneyAlertLink.fromRunId(runId) != null) { "Invalid run ID" }
         require(fcmTarget.length in 20..4096 && fcmTarget.all { it.code in 0x21..0x7e }) {
             "Invalid FCM target"
         }
         require(revision in 1..9_007_199_254_740_991L)
         val response = authenticatedRequest("/v1/android-status/subscription", "POST",
             JSONObject().put("runId", runId).put("fcmTarget", fcmTarget).put("revision", revision))
-        if (!response.optBoolean("stored", false) || response.optString("runId") != runId || response.optLong("revision") != revision) throw GatewayError("Status delivery was not accepted.")
+        val acknowledgedRevision = (response.opt("revision") as? Number)?.toDouble()
+        if (response.opt("stored") != true || response.opt("runId") != runId ||
+            acknowledgedRevision != revision.toDouble()) throw GatewayError("Status delivery was not accepted.")
     }
 
     suspend fun unregisterAndroidStatus(runId: String, revision: Long) {
-        require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
+        require(JourneyAlertLink.fromRunId(runId) != null) { "Invalid run ID" }
         require(revision in 1..9_007_199_254_740_991L)
         authenticatedRequest("/v1/android-status/subscription/$runId?revision=$revision", "DELETE", null)
     }
@@ -167,7 +169,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     suspend fun stationTrains(code: String): StationTrainsResult {
-        require(code.matches(Regex("[A-Z]{1,10}"))) { "Invalid station code" }
+        require(RailStationCode.isValid(code)) { "Invalid station code" }
         val data = get("/v1/stations/$code/trains")
         val station = decodeStation(data.getJSONObject("station"))
         val trains = data.getJSONArray("trains")
@@ -180,7 +182,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     suspend fun trainsBetween(from: String, to: String, travelDate: String): BetweenStationsResult {
-        require(from.matches(Regex("[A-Z]{1,10}")) && to.matches(Regex("[A-Z]{1,10}")) && from != to) {
+        require(RailStationCode.isValid(from) && RailStationCode.isValid(to) && from != to) {
             "Choose different valid stations"
         }
         require(runCatching { LocalDate.parse(travelDate).toString() == travelDate }.getOrDefault(false)) {
@@ -267,25 +269,42 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         validateDatedRequest(number, date)
         val now = System.currentTimeMillis()
         require(batch.consentedAt in (now - 15 * 60_000)..(now + 60_000)) { "Please confirm the report notice again" }
-        val generation = requestGeneration()
         val (body, key) = batch.encode()
+        return submitPhysicalBody(number, date, body, key, requestGeneration())
+    }
+
+    internal fun reportInstallationGeneration(): String = requestGeneration()
+
+    suspend fun submitQueuedPhysicalReport(report: QueuedPhysicalReport): SightingAcknowledgement {
+        validateDatedRequest(report.trainNumber, report.date)
+        require(report.hasCurrentConsent()) { "Please renew consent before retrying this report" }
+        val generation = requestGeneration()
+        if (generation != report.installation) throw GatewayError("This report belongs to an earlier installation.", code = "installation_changed")
+        return submitPhysicalBody(report.trainNumber, report.date, JSONObject(report.bodyText), report.key, generation)
+    }
+
+    private suspend fun submitPhysicalBody(number: String, date: String, body: JSONObject,
+                                           key: String, generation: String): SightingAcknowledgement {
         val response = authenticatedRequest("/v1/runs/$number/$date/physical-sightings", "POST", body, key)
         checkGeneration(generation)
         val ids = response.getJSONArray("acceptedIds")
-        require(ids.length() == batch.sightings.size)
+        require(ids.length() == body.getJSONArray("sightings").length())
         val evidence = response.getJSONObject("evidenceState")
         val states = setOf("proposed", "partial", "confirmed", "conflicting")
         val locomotive = evidence.getString("locomotive").also { require(it in states) }
         val rake = evidence.getString("rake").also { require(it in states) }
-        return SightingAcknowledgement((0 until ids.length()).map { ids.getString(it).also { id -> require(id.isNotBlank()) } },
-            locomotive, rake, response.getString("message"))
+        val accepted = (0 until ids.length()).map { (ids.get(it) as? String)?.takeIf(String::isNotBlank) ?: error("Invalid sighting acknowledgment") }
+        require(accepted.distinct().size == accepted.size)
+        return SightingAcknowledgement(accepted, locomotive, rake,
+            response.getString("message").also { require(it.isNotBlank()) })
     }
 
     private suspend fun <T> datedRead(number: String, date: String, suffix: String,
                                      decode: (JSONObject) -> T): T {
         validateDatedRequest(number, date)
         val generation = requestGeneration()
-        val payload = get("/v1/runs/$number/$date/$suffix")
+        val include = if (suffix == "rake-working") "?include=geometry" else ""
+        val payload = get("/v1/runs/$number/$date/$suffix$include")
         checkGeneration(generation)
         val result = decode(payload)
         checkGeneration(generation)

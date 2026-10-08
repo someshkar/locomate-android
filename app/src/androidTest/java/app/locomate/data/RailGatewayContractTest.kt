@@ -16,6 +16,57 @@ import java.net.SocketException
 
 /** Real HTTP regressions for native response identity and cache replacement. */
 class RailGatewayContractTest {
+    @Test fun stationCatalogueKeepsValidHyphenatedAndOneLetterCodes() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        AuditGateway().use { server ->
+            val gateway = RailGateway(context, server.url)
+            server.responseBody = InstrumentationRegistry.getInstrumentation().context.assets.open("contracts/rail-api/v1/station-search-hyphen.json").bufferedReader().use { it.readText() }
+            assertEquals(listOf("NDLS", "NRL-DLS", "D"), gateway.searchStations("NDLS").map { it.code })
+            server.responseBody = """{"station":{"code":"NRL-DLS","name":"Neral Diesel Loco Shed","sourceLabel":"Fixture"},"trains":[],"truncated":false}"""
+            assertEquals("NRL-DLS", gateway.stationTrains("NRL-DLS").station.code)
+            assertEquals("/v1/stations/NRL-DLS/trains", server.lastPath)
+        }
+    }
+    @Test fun cancellingPhysicalDispatchKeepsExactDurableReportForIdempotentRetry() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        AuditGateway().use { server ->
+            val gateway = RailGateway(context, server.url)
+            val queue = PhysicalReportQueue(context, server.url)
+            val now = System.currentTimeMillis()
+            val record = queue.stage("12345", "2026-08-24", PhysicalSightingBatch(
+                listOf(PhysicalSighting(SightingKind.Coach, "123456", now)), now), gateway.reportInstallationGeneration())
+            server.responseBody = """{"acceptedIds":["fixture-report"],"evidenceState":{"locomotive":"proposed","rake":"proposed"},"message":"Proposed evidence"}"""
+            server.releaseRun = CountDownLatch(1)
+            try {
+                val dispatch = launch(Dispatchers.Default) {
+                    gateway.submitQueuedPhysicalReport(record)
+                    queue.remove(record.key, record.installation)
+                }
+                assertTrue(server.runRequested.await(5, TimeUnit.SECONDS))
+                dispatch.cancel()
+                server.releaseRun!!.countDown()
+                dispatch.join()
+                assertEquals(record, PhysicalReportQueue(context, server.url).pending().single())
+                assertEquals(listOf("fixture-report"), gateway.submitQueuedPhysicalReport(record).acceptedIds)
+                assertEquals(record.key, server.lastHeaders["idempotency-key"])
+                assertEquals(record.bodyText, server.lastBody)
+                queue.remove(record.key, record.installation)
+                assertTrue(queue.pending().isEmpty())
+            } finally { server.releaseRun!!.countDown(); queue.clear() }
+        }
+    }
+    @Test fun operationalReadRequestsRequiredGeometryAndPhysicalReadUsesSameDatedIdentity() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        AuditGateway().use { server ->
+            val gateway = RailGateway(instrumentation.targetContext, server.url)
+            server.responseBody = """{"trainNumber":"12345","originDate":"2026-08-24","availability":"unavailable","mode":"inferred","disclaimer":"No confirmed connection","updatedAt":"2026-08-24T00:00:00Z","previous":null,"current":null,"next":null,"linkage":null,"delayAssessment":null,"propagatedDelay":null,"turnaroundRisk":null}"""
+            assertEquals("unavailable", gateway.operationalChain("12345", "2026-08-24").availability)
+            assertEquals("/v1/runs/12345/2026-08-24/rake-working?include=geometry", server.lastPath)
+            server.responseBody = instrumentation.context.assets.open("contracts/rail-api/v1/physical-chain-unavailable.json").bufferedReader().use { it.readText() }
+            assertEquals("unavailable", gateway.physicalChain("12345", "2026-08-24").state)
+            assertEquals("/v1/runs/12345/2026-08-24/physical-chain", server.lastPath)
+        }
+    }
     @Test fun journeyRejectsResponseForDifferentTrain() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         AuditGateway().use { server ->
@@ -81,6 +132,10 @@ class RailGatewayContractTest {
             assertEquals("/v1/android-status/subscription", server.lastPath)
             assertEquals("12951:2026-10-08", JSONObject(server.lastBody).getString("runId"))
             assertEquals(987654L, JSONObject(server.lastBody).getLong("revision"))
+            for (bad in listOf("987654.5", "\"987654\"", "987655")) {
+                server.responseBody = """{"stored":true,"runId":"12951:2026-10-08","revision":$bad}"""
+                assertTrue(runCatching { gateway.registerAndroidStatus("12951:2026-10-08", "a".repeat(32), 987654) }.isFailure)
+            }
             server.responseBody = "{}"
             gateway.unregisterAndroidStatus("12951:2026-10-08", 987655)
             assertEquals("/v1/android-status/subscription/12951:2026-10-08?revision=987655", server.lastPath)
@@ -104,6 +159,8 @@ class RailGatewayContractTest {
             assertEquals("/v1/runs/12345/2026-08-24/physical-sightings", server.lastPath)
             assertEquals(batch.encode().second, server.lastHeaders["idempotency-key"])
             assertEquals(batch.encode().first.toString(), server.lastBody)
+            server.responseBody = """{"acceptedIds":[42],"evidenceState":{"locomotive":"proposed","rake":"proposed"},"message":"Proposed evidence recorded"}"""
+            assertTrue(runCatching { gateway.submitPhysicalSightings("12345", "2026-08-24", batch) }.isFailure)
         }
     }
 

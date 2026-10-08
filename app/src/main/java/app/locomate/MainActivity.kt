@@ -24,6 +24,7 @@ import app.locomate.ui.RootView
 import app.locomate.ui.theme.LocomateTheme
 import app.locomate.data.CommunityLocationService
 import app.locomate.data.CommunityPreferences
+import app.locomate.data.PhysicalReportSyncWork
 
 class MainActivity : ComponentActivity() {
     private var jankStats: JankStats? = null
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         launchRevision++
+        PhysicalReportSyncWork.enqueue(this)
         jankStats?.isTrackingEnabled = true
     }
 
