@@ -123,7 +123,8 @@ fun RailMap(
     SideEffect {
         (hostView.context as? Activity)?.let { activity ->
             WindowCompat.getInsetsController(activity.window, hostView).isAppearanceLightStatusBars =
-                if (styleReady) isDay && appearance.imagery != MapImagery.Satellite else appLightIcons.value
+                if (styleReady && (visibleViewport == null || visibleViewport.height > 0f))
+                    isDay && appearance.imagery != MapImagery.Satellite else appLightIcons.value
         }
     }
     DisposableEffect(hostView) {
