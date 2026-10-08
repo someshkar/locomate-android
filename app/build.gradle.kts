@@ -72,7 +72,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             val railApiUrl = providers.gradleProperty("LOCOMATE_RAIL_API_URL").orNull
-                ?: "https://rail-intelligence-gateway.rail-intelligence-gateway.workers.dev"
+                ?: "https://locomate-backend.rail-intelligence-gateway.workers.dev"
             buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
         }
         create("benchmark") {

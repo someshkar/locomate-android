@@ -84,6 +84,12 @@ import androidx.compose.ui.text.withStyle
 import app.locomate.data.RailTimeText
 import app.locomate.data.RailGateway
 import app.locomate.ui.theme.LM
+import app.locomate.ui.theme.Motion
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import app.locomate.ui.theme.PlexMono
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -316,7 +322,9 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             }
                         }
                         Spacer(Modifier.height(18.dp))
-                        Surface(color = if (route?.isPreview == true) LM.Raised else LM.Raised,
+                        // The card already carries status and source; repeat them only when a
+                        // message has taken the card's source line, or for previews and the empty state.
+                        if (route == null || route.isPreview || message != null) Surface(color = LM.Raised,
                             shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Outlined.Info, contentDescription = null, tint = LM.Replay, modifier = Modifier.size(20.dp))
@@ -431,20 +439,26 @@ private fun MapCameraButton(label: String, icon: androidx.compose.ui.graphics.ve
 
 @Composable
 private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?) {
-    val boarding = remember(route, plan) { RailTimeText.boardingDeparture(route, plan) } ?: return
+    val boarding = remember(route, plan) { RailTimeText.boardingDeparture(route, plan) }
+    val alighting = remember(route, plan) { RailTimeText.alightingArrival(route, plan) }
+    if (boarding == null && alighting == null) return
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var now by remember(boarding) { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(boarding, lifecycle) {
+    var now by remember(boarding, alighting) { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(boarding, alighting, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isActive) {
                 now = System.currentTimeMillis()
-                val remaining = boarding.departureAtMillis - now
-                if (remaining <= 0) awaitCancellation()
-                delay(minOf(60_000, remaining))
+                // Tick to the departure first, then on to the arrival.
+                val next = listOfNotNull(boarding?.departureAtMillis, alighting?.departureAtMillis).firstOrNull { it > now }
+                    ?: awaitCancellation()
+                delay(minOf(60_000, next - now))
             }
         }
     }
-    RailTimeText.untilScheduledDeparture(boarding.departureAtMillis, now)?.let { countdown ->
+    val departing = boarding?.let { RailTimeText.untilScheduledDeparture(it.departureAtMillis, now) }
+    val arriving = if (departing == null) alighting?.let { RailTimeText.untilScheduledArrival(it.departureAtMillis, now) } else null
+    val station = if (departing != null) boarding?.stationCode else alighting?.stationCode
+    (departing ?: arriving)?.let { countdown ->
         val styled = buildAnnotatedString {
             var cursor = 0
             for (match in Regex("[0-9]+").findAll(countdown)) {
@@ -456,9 +470,14 @@ private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?)
             }
             append(countdown.substring(cursor))
         }
-        Text(styled, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
+        androidx.compose.animation.AnimatedContent(styled, label = "countdown",
+            transitionSpec = { (fadeIn(Motion.fadeNormal()) + slideInVertically { -it / 3 }) togetherWith
+                (fadeOut(Motion.fadeFast()) + slideOutVertically { it / 3 }) }) { text ->
+            Text(text, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
+        }
         Spacer(Modifier.height(5.dp))
-        Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}Scheduled boarding at ${boarding.stationCode}",
+        Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}${
+            if (departing != null) "Scheduled boarding" else "Scheduled arrival"} at $station",
             color = LM.Ink2, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
     }

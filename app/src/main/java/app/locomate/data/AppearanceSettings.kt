@@ -8,7 +8,8 @@ import kotlin.math.*
 enum class AppAppearance { System, Light, Dark }
 enum class MapLighting { Auto, Day, Night }
 enum class MapImagery { Standard, Satellite }
-data class AppearanceSettings(val app: AppAppearance = AppAppearance.System,
+/** Dark by default, matching iOS: the night map and glass sheets are the signature look. */
+data class AppearanceSettings(val app: AppAppearance = AppAppearance.Dark,
                               val lighting: MapLighting = MapLighting.Auto,
                               val imagery: MapImagery = MapImagery.Standard,
                               val rotation: Boolean = true)
@@ -16,7 +17,7 @@ data class AppearanceSettings(val app: AppAppearance = AppAppearance.System,
 class AppearanceStore(context: Context) {
     internal val preferences = context.applicationContext.getSharedPreferences("locomate.appearance", Context.MODE_PRIVATE)
     fun load() = AppearanceSettings(
-        enumValue(preferences.getString("app", null), AppAppearance.System),
+        enumValue(preferences.getString("app", null), AppAppearance.Dark),
         enumValue(preferences.getString("lighting", null), MapLighting.Auto),
         enumValue(preferences.getString("imagery", null), MapImagery.Standard),
         preferences.getBoolean("rotation", true))

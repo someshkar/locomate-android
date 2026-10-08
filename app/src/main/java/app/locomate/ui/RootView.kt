@@ -30,6 +30,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import app.locomate.ui.theme.Motion
+import app.locomate.ui.theme.pressScale
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -837,7 +844,9 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
                                 content: @Composable (Dp) -> Unit) {
     var dockHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    val dockInset = maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
+    // While typing, the dock steps aside so results get the room above the keyboard.
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val dockInset = if (imeVisible) 16.dp else maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
     val pageLayer = rememberGraphicsLayer()
     val backdrop = remember(pageLayer) { DockBackdrop(pageLayer) }
     androidx.compose.runtime.CompositionLocalProvider(LocalMapGlass provides mapGlass, LocalDockBackdrop provides backdrop) {
@@ -849,11 +858,20 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
                     drawLayer(pageLayer)
                     backdrop.pageDrawn()
                 }) { content(dockInset) }
-            CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .onSizeChanged { dockHeightPx = it.height }
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp))
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !imeVisible,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = androidx.compose.animation.slideInVertically(Motion.dockSpring) { it } +
+                    androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.slideOutVertically(Motion.dockSpring) { it } +
+                    androidx.compose.animation.fadeOut()
+            ) {
+                CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
+                    modifier = Modifier
+                        .onSizeChanged { dockHeightPx = it.height }
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp))
+            }
         }
     }
 }
@@ -872,25 +890,48 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             modifier = Modifier.weight(1f).heightIn(min = 70.dp)
         ) {
             DockGlassSurface(Modifier.dockRim(36f)) { glass ->
-                Row(Modifier.background(if (glass) lens else fallback)
-                    .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val selectTab: (Tab) -> Unit = {
-                        haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                        onTab(it)
+                val tabs = listOf(Tab.Journeys, Tab.Explore, Tab.Passport)
+                val selectedIndex = tabs.indexOf(tab).takeUnless { searchActive || it < 0 }
+                androidx.compose.foundation.layout.BoxWithConstraints(
+                    Modifier.background(if (glass) lens else fallback).padding(8.dp)
+                ) {
+                    // One pill slides between tabs on a spring, as on iOS, rather
+                    // than each tab fading its own background in and out.
+                    val slot = maxWidth / tabs.size
+                    val pillOffset by androidx.compose.animation.core.animateDpAsState(
+                        slot * (selectedIndex ?: 0),
+                        app.locomate.ui.theme.motionSpec(androidx.compose.animation.core.spring(
+                            dampingRatio = 0.76f, stiffness = 584f)),
+                        label = "dock pill")
+                    val pillAlpha by androidx.compose.animation.core.animateFloatAsState(
+                        if (selectedIndex == null) 0f else 1f, label = "dock pill alpha")
+                    Box(Modifier.matchParentSize()) {
+                        Box(Modifier.offset(x = pillOffset).width(slot).fillMaxHeight()
+                            .graphicsLayer { alpha = pillAlpha }
+                            .background(LM.Ink.copy(alpha = 0.07f), RoundedCornerShape(27.dp))
+                            .dockRim(27f))
                     }
-                    NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", R.drawable.navigation_journeys, selectTab, Modifier.weight(1f))
-                    NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", R.drawable.navigation_explore, selectTab, Modifier.weight(1f))
-                    NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", R.drawable.navigation_passport, selectTab, Modifier.weight(1f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val selectTab: (Tab) -> Unit = {
+                            haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                            onTab(it)
+                        }
+                        NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", R.drawable.navigation_journeys, selectTab, Modifier.weight(1f))
+                        NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", R.drawable.navigation_explore, selectTab, Modifier.weight(1f))
+                        NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", R.drawable.navigation_passport, selectTab, Modifier.weight(1f))
+                    }
                 }
             }
         }
         Spacer(Modifier.width(14.dp))
+        val searchPress = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
         Surface(
             onClick = onSearch,
             color = Color.Transparent,
             shape = CircleShape,
             shadowElevation = 20.dp,
-            modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
+            interactionSource = searchPress,
+            modifier = Modifier.size(60.dp).pressScale(searchPress, 0.9f).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
         ) {
             DockGlassSurface(Modifier.dockRim(30f)) { glass ->
                 Box(Modifier.fillMaxSize().background(if (glass) lens else fallback), contentAlignment = Alignment.Center) {
@@ -913,23 +954,20 @@ private fun NavItem(
     val active = item == selected
     val showLabel = LocalDensity.current.fontScale < 1.8f
     val color by animateColorAsState(if (active) LM.Ink else LM.DockLabel, label = "nav ink")
-    val container by animateColorAsState(
-        if (active) LM.Ink.copy(alpha = 0.07f) else Color.Transparent,
-        animationSpec = spring(),
-        label = "nav selection"
-    )
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Surface(
         onClick = { onTab(item) },
-        color = container,
+        color = Color.Transparent,
         shape = RoundedCornerShape(27.dp),
-        modifier = modifier.fillMaxWidth().heightIn(min = 54.dp)
+        interactionSource = interaction,
+        modifier = modifier.fillMaxWidth().heightIn(min = 54.dp).pressScale(interaction, 0.92f)
             .semantics {
                 contentDescription = label
                 this.selected = active
                 role = Role.Tab
             }
     ) {
-        Column(Modifier.then(if (active) Modifier.dockRim(27f) else Modifier).padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
             Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.size(21.dp))
             Spacer(Modifier.height(4.dp))

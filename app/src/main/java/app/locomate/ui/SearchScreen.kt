@@ -178,7 +178,8 @@ fun SearchScreen(
                     }
                 }
             }
-            item("catalogue") {
+            // The how-to hint earns its space only before anything is typed.
+            if (requestQuery.isEmpty() || !gateway.configured) item("catalogue") {
                 Column {
                     Spacer(Modifier.height(26.dp))
                     Text(if (gateway.configured) "TRAINS" else "HISTORICAL TRAINS", color = LM.Ink3,
@@ -250,6 +251,8 @@ fun SearchScreen(
             if (gateway.configured) itemsIndexed(liveResults, key = { index, train -> "${train.number}:$index" }) { index, train ->
                 SearchResultRow(train.number, train.name, train.originCode, train.destinationCode,
                     train.originName, train.destinationName, train.sourceLabel, train.distanceKm,
+                    departure = train.departure, arrival = train.arrival,
+                    modifier = Modifier.animateItem(),
                     showSeparator = index < liveResults.lastIndex,
                     enabled = !searching && runCatching { LocalDate.parse(date) }.isSuccess,
                     onSelect = { if (query.trim() == requestQuery) { rememberTrain(train); onSelectLive(train, date) } })

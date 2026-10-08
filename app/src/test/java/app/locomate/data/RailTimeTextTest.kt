@@ -16,13 +16,15 @@ class RailTimeTextTest {
     }
 
     @Test fun futureTimesUseFullDaysHoursAndMinutes() {
-        assertEquals("1 day 4 hours until scheduled departure", RailTimeText.untilScheduledDeparture(now + 28 * hour, now))
-        assertEquals("2 days until scheduled departure", RailTimeText.untilScheduledDeparture(now + 48 * hour, now))
-        assertEquals("1 hour 1 minute until scheduled departure", RailTimeText.untilScheduledDeparture(now + hour + 60_000, now))
-        assertEquals("1 minute until scheduled departure", RailTimeText.untilScheduledDeparture(now + 60_000, now))
-        assertEquals("Less than a minute until scheduled departure", RailTimeText.untilScheduledDeparture(now + 59_999, now))
+        assertEquals("1 day 4 hours until departure", RailTimeText.untilScheduledDeparture(now + 28 * hour, now))
+        assertEquals("2 days until departure", RailTimeText.untilScheduledDeparture(now + 48 * hour, now))
+        assertEquals("1 hour 1 minute until departure", RailTimeText.untilScheduledDeparture(now + hour + 60_000, now))
+        assertEquals("1 minute until departure", RailTimeText.untilScheduledDeparture(now + 60_000, now))
+        assertEquals("Less than a minute until departure", RailTimeText.untilScheduledDeparture(now + 59_999, now))
         assertNull(RailTimeText.untilScheduledDeparture(now, now))
         assertNull(RailTimeText.untilScheduledDeparture(now - 1, now))
+        assertEquals("11 hours 57 minutes until arrival", RailTimeText.untilScheduledArrival(now + 11 * hour + 57 * 60_000, now))
+        assertNull(RailTimeText.untilScheduledArrival(now, now))
     }
 
     @Test fun countdownFollowsPersonalBoardingAfterTheTrainOriginHasDeparted() {
@@ -31,7 +33,7 @@ class RailTimeTextTest {
         assertEquals("B", board.stationCode)
         assertEquals(now + 28 * hour, board.departureAtMillis)
         assertNull(RailTimeText.boardingDeparture(route, JourneyPlan.default(route)))
-        assertEquals("1 day 4 hours until scheduled departure", RailTimeText.untilScheduledDeparture(board.departureAtMillis, now))
+        assertEquals("1 day 4 hours until departure", RailTimeText.untilScheduledDeparture(board.departureAtMillis, now))
     }
 
     @Test fun missingIntermediateDepartureNeverFallsBackToArrivalOrTrainOrigin() {
@@ -55,7 +57,7 @@ class RailTimeTextTest {
     @Test fun cachedTimetableRemainsScheduledWithoutPretendingItIsLive() {
         val route = route().copy(statusLabel = "STALE · LAST KNOWN")
         val board = RailTimeText.boardingDeparture(route, JourneyPlan("B", "C"))!!
-        assertEquals("1 day 4 hours until scheduled departure", RailTimeText.untilScheduledDeparture(board.departureAtMillis, now))
+        assertEquals("1 day 4 hours until departure", RailTimeText.untilScheduledDeparture(board.departureAtMillis, now))
     }
 
     private fun route() = RoutePreview("12951", "Test", "A", "Origin", "C", "Destination", "10:00", "14:00", 2,

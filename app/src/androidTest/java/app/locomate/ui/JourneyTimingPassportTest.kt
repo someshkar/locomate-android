@@ -159,7 +159,7 @@ class JourneyTimingPassportTest {
                 LocomateTheme { JourneyScreen(route, plan, saved = false, onSave = {}) }
             }
         }
-        val countdown = "1 day 4 hours until scheduled departure"
+        val countdown = "1 day 4 hours until departure"
         compose.onNodeWithText(countdown).assertDoesNotExist()
         compose.runOnIdle { plan = JourneyPlan("B", "C") }
         compose.onNodeWithText(countdown).performScrollTo().assertIsDisplayed()
