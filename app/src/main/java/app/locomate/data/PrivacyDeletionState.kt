@@ -10,6 +10,12 @@ object PrivacyDeletionState {
 
     fun pending(context: Context): Boolean = file(context).baseFile.exists()
 
+    /** Coordinates durable local writes with the deletion marker. */
+    @Synchronized fun <T> withDataAccess(context: Context, block: () -> T): T {
+        if (pending(context)) throw GatewayError("Data deletion is pending.", code = "deletion_pending")
+        return block()
+    }
+
     @Synchronized fun begin(context: Context) {
         val marker = file(context)
         val output = marker.startWrite()

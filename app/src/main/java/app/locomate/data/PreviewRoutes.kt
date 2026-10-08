@@ -13,7 +13,7 @@ data class RouteStop(
     val state: String = "upcoming",
     val actualArrival: String? = null,
     val actualDeparture: String? = null,
-    val delayMinutes: Int? = null,
+    val delayMinutes: Double? = null,
     val forecastP10: String? = null,
     val forecastP50: String? = null,
     val forecastP90: String? = null,
@@ -40,6 +40,11 @@ data class RoutePreview(
     val calls: List<RouteStop>,
     val distanceKm: Double = 0.0,
     val durationMinutes: Int = 0,
+    /** Exact duration from fractional wire minutes; null denotes a legacy whole-minute record. */
+    val durationMillis: Long? = null,
+    val forecastDelayMinutes: Double? = null,
+    val forecastLeadMinutes: Double? = null,
+    val forecastAgeSeconds: Double? = null,
     val isPreview: Boolean = true,
     val runId: String? = null,
     val runDate: String? = null,
@@ -53,6 +58,8 @@ data class RoutePreview(
     /** Local receipt time; retained snapshots must not gain a new freshness window when reused. */
     val receivedAtMillis: Long? = null,
 ) {
+    val scheduledDurationMillis: Long? get() = durationMillis?.takeIf { it > 0 }
+        ?: durationMinutes.takeIf { it > 0 }?.toLong()?.times(60_000)
     val displayName: String get() = if ("Rajdhani" in name && '-' in name) {
         "${name.substringBefore('-').removeSuffix(" Central")} Rajdhani"
     } else name

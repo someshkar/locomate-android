@@ -97,7 +97,7 @@ object CommunityLocationFilter {
         if (route.isPreview || route.statusLabel.startsWith("STALE") || route.geometry.size < 2) return false
         val departure = route.departureInstantMillis ?: return false
         val arrival = route.arrivalInstantMillis
-            ?: route.durationMinutes.takeIf { it > 0 }?.let { departure + it * 60_000L }
+            ?: route.scheduledDurationMillis?.let { departure + it }
             ?: return false
         return route.runId != null && route.runDate != null && arrival > departure &&
             now >= departure - 6 * 3_600_000L && now <= arrival + 24 * 3_600_000L
@@ -106,7 +106,7 @@ object CommunityLocationFilter {
     fun windowEnd(route: RoutePreview): Long? {
         val departure = route.departureInstantMillis ?: return null
         val arrival = route.arrivalInstantMillis
-            ?: route.durationMinutes.takeIf { it > 0 }?.let { departure + it * 60_000L }
+            ?: route.scheduledDurationMillis?.let { departure + it }
             ?: return null
         return (arrival + 24 * 3_600_000L).takeIf { arrival > departure }
     }
@@ -249,7 +249,7 @@ object CommunityBatch {
         val tuples = JSONArray()
         sorted.forEachIndexed { index, item ->
             require(item.consentVersion == CommunityConsent.VERSION)
-            val tuple = JSONArray().put(item.localId).put(item.runId).put(item.consentVersion)
+            val tuple = JSONArray().put(item.localId).put(canonicalObservationRunId(item.runId)).put(item.consentVersion)
                 .put(if (index == 0) 0 else item.timestamp - previous.timestamp)
                 .put(if (index == 0) 0 else item.latE5 - previous.latE5)
                 .put(if (index == 0) 0 else item.lonE5 - previous.lonE5)

@@ -20,6 +20,11 @@ class CommunityContributionTest {
         assertEquals(1_000L, payload.getJSONArray("base").getLong(0))
         val tuples = payload.getJSONArray("observations")
         assertEquals(first.localId, tuples.getJSONArray(0).getLong(0))
+        assertEquals("run:12137:2026-10-01", tuples.getJSONArray(0).getString(1))
+        assertEquals("12137:2026-10-01", first.runId)
+        // Retry keys and acknowledgment IDs remain based on unchanged on-device records.
+        assertEquals(key, CommunityBatch.encode(listOf(first, second)).second)
+        assertEquals(first.localId, CommunityObservation.fromJson(first.toJson()).localId)
         assertEquals(0L, tuples.getJSONArray(0).getLong(3))
         assertEquals(1_500L, tuples.getJSONArray(1).getLong(3))
         assertEquals(7L, tuples.getJSONArray(1).getLong(4))

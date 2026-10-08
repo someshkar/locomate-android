@@ -4,10 +4,16 @@ import java.time.LocalDate
 
 /** Human-readable timing with no status inferred from a timetable. */
 object RailTimeText {
-    fun delay(minutes: Int?): String = when {
-        minutes == null -> "Delay unavailable"
-        minutes == 0 -> "On time"
-        else -> "${quantity(kotlin.math.abs(minutes.toLong()), "minute")} ${if (minutes < 0) "early" else "late"}"
+    /** Only presentation rounds; all timetable and forecast arithmetic retains the wire precision. */
+    fun delay(minutes: Number?): String {
+        val value = minutes?.toDouble()?.takeIf { it.isFinite() } ?: return "Delay unavailable"
+        if (value == 0.0) return "On time"
+        val magnitude = kotlin.math.abs(value)
+        val label = if (magnitude < 1.0) "Less than a minute" else {
+            val whole = kotlin.math.floor(magnitude + 0.5).toLong()
+            quantity(whole, "minute")
+        }
+        return "$label ${if (value < 0) "early" else "late"}"
     }
 
     fun untilScheduledDeparture(departureAtMillis: Long, nowMillis: Long): String? {

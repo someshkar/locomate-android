@@ -194,7 +194,7 @@ class JourneyTimingPassportTest {
     private fun route(now: Long) = RoutePreview("12951", "Timing Express", "A", "Origin", "C", "Destination",
         "10:00", "14:00", 2, emptyList(), listOf(
             RouteStop("A", "Origin", null, "10:00", state = "passed", actualDeparture = "09:42",
-                delayMinutes = -18, scheduledDepartureMillis = now - 3_600_000),
+                delayMinutes = -18.0, scheduledDepartureMillis = now - 3_600_000),
             RouteStop("B", "Boarding", "13:00", "13:05", scheduledDepartureMillis = now + 28 * 3_600_000 + 30 * 60_000),
             RouteStop("C", "Destination", "14:00", null, scheduledArrivalMillis = now + 30 * 3_600_000),
         ), isPreview = false, runDate = "2026-10-01", departureInstantMillis = now - 3_600_000,
