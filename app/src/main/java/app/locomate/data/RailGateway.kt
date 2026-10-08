@@ -21,6 +21,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlin.math.roundToLong
 
 data class TrainSearchResult(
     val number: String,
@@ -57,7 +60,7 @@ data class NetworkTrain(
     val observedAt: String,
     val positionKind: String,
     val source: String,
-    val delayMinutes: Int?,
+    val delayMinutes: Double?,
 )
 
 data class NetworkSnapshot(val trains: List<NetworkTrain>, val generatedAt: String, val freshUntil: String)
@@ -74,7 +77,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     private val configuredValue = baseUrl.isNotBlank()
     private val base: String? = validateBase(baseUrl)
     private val prefs = appContext.getSharedPreferences("locomate.installation", Context.MODE_PRIVATE)
-    private val cacheFolder = File(appContext.filesDir, "rail-run-cache/${railStorageScope(baseUrl)}").apply { mkdirs() }
+    private val cacheFolder = File(appContext.filesDir, "rail-run-cache/${railStorageScope(baseUrl)}")
     private val installationId: String by lazy {
         prefs.getString("id", null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString("id", it).apply()
@@ -107,19 +110,23 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     /** The FCM target is a Firebase Installation ID from the native SDK. */
-    suspend fun registerAndroidStatus(runId: String, fcmTarget: String) {
-        require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
+    suspend fun registerAndroidStatus(runId: String, fcmTarget: String, revision: Long) {
+        require(JourneyAlertLink.fromRunId(runId) != null) { "Invalid run ID" }
         require(fcmTarget.length in 20..4096 && fcmTarget.all { it.code in 0x21..0x7e }) {
             "Invalid FCM target"
         }
+        require(revision in 1..9_007_199_254_740_991L)
         val response = authenticatedRequest("/v1/android-status/subscription", "POST",
-            JSONObject().put("runId", runId).put("fcmTarget", fcmTarget))
-        if (!response.optBoolean("stored", false)) throw GatewayError("Status delivery was not accepted.")
+            JSONObject().put("runId", runId).put("fcmTarget", fcmTarget).put("revision", revision))
+        val acknowledgedRevision = (response.opt("revision") as? Number)?.toDouble()
+        if (response.opt("stored") != true || response.opt("runId") != runId ||
+            acknowledgedRevision != revision.toDouble()) throw GatewayError("Status delivery was not accepted.")
     }
 
-    suspend fun unregisterAndroidStatus(runId: String) {
-        require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
-        authenticatedRequest("/v1/android-status/subscription/$runId", "DELETE", null)
+    suspend fun unregisterAndroidStatus(runId: String, revision: Long) {
+        require(JourneyAlertLink.fromRunId(runId) != null) { "Invalid run ID" }
+        require(revision in 1..9_007_199_254_740_991L)
+        authenticatedRequest("/v1/android-status/subscription/$runId?revision=$revision", "DELETE", null)
     }
 
     suspend fun registerJourneyAlerts(subscription: JourneyAlertSubscription): JourneyAlertAcknowledgement {
@@ -162,7 +169,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     suspend fun stationTrains(code: String): StationTrainsResult {
-        require(code.matches(Regex("[A-Z]{1,10}"))) { "Invalid station code" }
+        require(RailStationCode.isValid(code)) { "Invalid station code" }
         val data = get("/v1/stations/$code/trains")
         val station = decodeStation(data.getJSONObject("station"))
         val trains = data.getJSONArray("trains")
@@ -175,7 +182,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     suspend fun trainsBetween(from: String, to: String, travelDate: String): BetweenStationsResult {
-        require(from.matches(Regex("[A-Z]{1,10}")) && to.matches(Regex("[A-Z]{1,10}")) && from != to) {
+        require(RailStationCode.isValid(from) && RailStationCode.isValid(to) && from != to) {
             "Choose different valid stations"
         }
         require(runCatching { LocalDate.parse(travelDate).toString() == travelDate }.getOrDefault(false)) {
@@ -230,7 +237,7 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                     observedAt = train.getString("observedAt"),
                     positionKind = train.getString("positionKind"),
                     source = train.getString("source"),
-                    delayMinutes = if (train.isNull("delayMinutes")) null else train.optInt("delayMinutes"),
+                    delayMinutes = train.finiteOrNull("delayMinutes"),
                 )
             },
             generatedAt = data.optString("generatedAt", ""),
@@ -251,28 +258,121 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         return TrainReliabilitySummary.decode(payload, number)
     }
 
-    suspend fun journey(number: String, originDate: String): RoutePreview {
+    suspend fun operationalChain(number: String, date: String): OperationalChain =
+        datedRead(number, date, "rake-working") { OperationalChain.decode(it, number, date) }
+
+    suspend fun physicalChain(number: String, date: String): PhysicalChain =
+        datedRead(number, date, "physical-chain") { PhysicalChain.decode(it, number, date) }
+
+    suspend fun submitPhysicalSightings(number: String, date: String,
+                                       batch: PhysicalSightingBatch): SightingAcknowledgement {
+        validateDatedRequest(number, date)
+        val now = System.currentTimeMillis()
+        require(batch.consentedAt in (now - 15 * 60_000)..(now + 60_000)) { "Please confirm the report notice again" }
+        val (body, key) = batch.encode()
+        return submitPhysicalBody(number, date, body, key, requestGeneration())
+    }
+
+    internal fun reportInstallationGeneration(): String = requestGeneration()
+
+    suspend fun submitQueuedPhysicalReport(report: QueuedPhysicalReport): SightingAcknowledgement {
+        validateDatedRequest(report.trainNumber, report.date)
+        require(report.hasCurrentConsent()) { "Please renew consent before retrying this report" }
+        val generation = requestGeneration()
+        if (generation != report.installation) throw GatewayError("This report belongs to an earlier installation.", code = "installation_changed")
+        return submitPhysicalBody(report.trainNumber, report.date, JSONObject(report.bodyText), report.key, generation)
+    }
+
+    private suspend fun submitPhysicalBody(number: String, date: String, body: JSONObject,
+                                           key: String, generation: String): SightingAcknowledgement {
+        val response = authenticatedRequest("/v1/runs/$number/$date/physical-sightings", "POST", body, key)
+        checkGeneration(generation)
+        val ids = response.getJSONArray("acceptedIds")
+        require(ids.length() == body.getJSONArray("sightings").length())
+        val evidence = response.getJSONObject("evidenceState")
+        val states = setOf("proposed", "partial", "confirmed", "conflicting")
+        val locomotive = evidence.getString("locomotive").also { require(it in states) }
+        val rake = evidence.getString("rake").also { require(it in states) }
+        val accepted = (0 until ids.length()).map { (ids.get(it) as? String)?.takeIf(String::isNotBlank) ?: error("Invalid sighting acknowledgment") }
+        require(accepted.distinct().size == accepted.size)
+        return SightingAcknowledgement(accepted, locomotive, rake,
+            response.getString("message").also { require(it.isNotBlank()) })
+    }
+
+    private suspend fun <T> datedRead(number: String, date: String, suffix: String,
+                                     decode: (JSONObject) -> T): T {
+        validateDatedRequest(number, date)
+        val generation = requestGeneration()
+        val include = if (suffix == "rake-working") "?include=geometry" else ""
+        val payload = get("/v1/runs/$number/$date/$suffix$include")
+        checkGeneration(generation)
+        val result = decode(payload)
+        checkGeneration(generation)
+        return result
+    }
+
+    private fun validateDatedRequest(number: String, date: String) {
         require(Regex("^[0-9]{4,6}$").matches(number)) { "Invalid train number" }
-        LocalDate.parse(originDate)
-        var cachedAt: Long? = null
-        val root = try {
-            get("/v1/runs/$number/$originDate").also { saveRun(number, originDate, it) }
-        } catch (failure: Exception) {
-            val cached = readRun(number, originDate) ?: throw failure
-            cachedAt = cached.first
-            cached.second
+        require(LocalDate.parse(date).toString() == date) { "Invalid origin date" }
+    }
+
+    private fun requestGeneration(): String = PrivacyDeletionState.withDataAccess(appContext) {
+        requireRequestAllowed(false)
+        installationId.also {
+            if (currentInstallationId() != it)
+                throw GatewayError("Installation changed while loading this train.", code = "installation_changed")
         }
+    }
+
+    suspend fun journey(number: String, originDate: String): RoutePreview {
+        validateDatedRequest(number, originDate)
+        val generation = requestGeneration()
+        try {
+            val payload = get("/v1/runs/$number/$originDate")
+            checkGeneration(generation)
+            // Decode the complete response before replacing the last valid offline snapshot.
+            val decoded = decodeJourney(payload, number, originDate)
+            saveRun(number, originDate, payload, generation)
+            checkGeneration(generation)
+            return decoded
+        } catch (failure: Exception) {
+            if (failure is CancellationException) throw failure
+            checkGeneration(generation)
+            val cached = readRun(number, originDate) ?: throw failure
+            val decoded = try { decodeJourney(cached.second, number, originDate, cached.first) }
+                catch (_: Exception) { throw failure }
+            checkGeneration(generation)
+            return decoded
+        }
+    }
+
+    internal fun decodeJourney(root: JSONObject, number: String, originDate: String,
+                               cachedAt: Long? = null): RoutePreview {
         val journey = root.getJSONObject("journey")
+        val expectedId = "$number:$originDate"
+        if (journey.opt("trainNumber") != number || journey.opt("travelDate") != originDate ||
+            journey.opt("id") != "run:$expectedId") {
+            throw GatewayError("The rail service returned a different dated train.", code = "invalid_run_identity")
+        }
         val stops = journey.getJSONArray("stops")
+        require(stops.length() > 0) { "The route has no stops" }
         val stopObjects = (0 until stops.length()).map(stops::getJSONObject)
         val scheduledTimes = RailClockSequence.resolve(originDate, stopObjects.map { stop ->
             stop.stringOrNull("scheduledArrival") to stop.stringOrNull("scheduledDeparture")
         })
-        val routeArray = journey.optJSONArray("routeCoordinates")
-        val geometry = if (routeArray == null) emptyList() else (0 until routeArray.length()).map { i ->
+        val routeArray = journey.getJSONArray("routeCoordinates")
+        require(routeArray.length() >= 2) { "The route has no usable geometry" }
+        val geometry = (0 until routeArray.length()).map { i ->
             val point = routeArray.getJSONObject(i)
-            RailPoint(point.getDouble("latitude"), point.getDouble("longitude"))
+            val latitude = point.requiredFinite("latitude")
+            val longitude = point.requiredFinite("longitude")
+            require(latitude in -90.0..90.0 && longitude in -180.0..180.0) { "Invalid route coordinate" }
+            RailPoint(latitude, longitude)
         }
+        val duration = journey.finiteOrNull("scheduledDurationMinutes")?.also {
+            require(it >= 0 && it <= Long.MAX_VALUE.toDouble() / 60_000) { "Invalid scheduled duration" }
+        }
+        val durationMillis = duration?.let { (it * 60_000).roundToLong() }
         val prediction = journey.getJSONObject("prediction")
         val provenance = journey.optJSONObject("provenance")
         val expected = prediction.stringOrNull("expectedTime")
@@ -281,8 +381,11 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         val freshness = provenance?.stringOrNull("freshness") ?: "scheduled"
         val hasForecast = expected != null && prediction.stringOrNull("source") != "scheduled" && freshness != "scheduled"
         val scheduledEnd = scheduledTimes.lastOrNull()?.arrivalMillis ?: instantMillis(journey.getString("scheduledArrival"))
-        val forecastEnd = if (hasForecast && !prediction.isNull("delayMinutes") && scheduledEnd != null)
-            scheduledEnd + prediction.optInt("delayMinutes").toLong() * 60_000 else scheduledEnd
+        val delay = prediction.finiteOrNull("delayMinutes")
+        val forecastEnd = if (hasForecast && delay != null && scheduledEnd != null) {
+            require(kotlin.math.abs(delay) <= Long.MAX_VALUE.toDouble() / 60_000) { "Invalid forecast delay" }
+            Math.addExact(scheduledEnd, (delay * 60_000).roundToLong())
+        } else scheduledEnd
         val position = journey.optJSONObject("position")
         val positionDisplay = RailPositionEvidence.display(
             source = position?.stringOrNull("source"),
@@ -331,20 +434,24 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
                     state = stop.optString("state", "upcoming"),
                     actualArrival = stop.stringOrNull("actualArrival")?.let(::railTime),
                     actualDeparture = stop.stringOrNull("actualDeparture")?.let(::railTime),
-                    delayMinutes = if (stop.isNull("delayMinutes")) null else stop.optInt("delayMinutes"),
+                    delayMinutes = stop.finiteOrNull("delayMinutes"),
                     forecastP10 = forecast?.stringOrNull("p10")?.let(::railTime),
                     forecastP50 = forecast?.stringOrNull("p50")?.let(::railTime),
                     forecastP90 = forecast?.stringOrNull("p90")?.let(::railTime),
                     forecastSource = forecast?.stringOrNull("source"),
                     fallbackReason = forecast?.stringOrNull("fallbackReason"),
                     platform = stop.stringOrNull("platform"),
-                    distanceKm = if (stop.isNull("distanceKm")) null else stop.optDouble("distanceKm"),
+                    distanceKm = stop.finiteOrNull("distanceKm")?.also { require(it >= 0) },
                     scheduledArrivalMillis = scheduledTimes[i].arrivalMillis,
                     scheduledDepartureMillis = scheduledTimes[i].departureMillis,
                 )
             },
-            distanceKm = journey.optDouble("distanceKm", 0.0),
-            durationMinutes = journey.optInt("scheduledDurationMinutes", 0),
+            distanceKm = journey.requiredFinite("distanceKm").also { require(it >= 0) },
+            durationMinutes = duration?.toInt() ?: 0,
+            durationMillis = durationMillis,
+            forecastDelayMinutes = delay,
+            forecastLeadMinutes = prediction.finiteOrNull("leadMinutes"),
+            forecastAgeSeconds = prediction.finiteOrNull("updatedSecondsAgo"),
             isPreview = false,
             receivedAtMillis = cachedAt ?: System.currentTimeMillis(),
             // The enriched response prefixes its ID with `run:` while the collector
@@ -401,28 +508,59 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         }
     }
 
-    private suspend fun saveRun(number: String, date: String, payload: JSONObject) = withContext(Dispatchers.IO) {
-        runCatching {
-            val file = AtomicFile(File(cacheFolder, "$number-$date.json"))
-            val output = file.startWrite()
+    private fun currentInstallationId(): String? = appContext
+        .getSharedPreferences("locomate.installation", Context.MODE_PRIVATE).getString("id", null)
+
+    private suspend fun checkGeneration(generation: String) {
+        currentCoroutineContext().ensureActive()
+        PrivacyDeletionState.withDataAccess(appContext) {
+            requireRequestAllowed(false)
+            if (currentInstallationId() != generation)
+                throw GatewayError("Installation changed while loading this train.", code = "installation_changed")
+        }
+    }
+
+    private suspend fun saveRun(number: String, date: String, payload: JSONObject,
+                                generation: String) = withContext(Dispatchers.IO) {
+        val context = currentCoroutineContext()
+        // Serialized with deletion's durable marker: a completed deletion cannot be repopulated.
+        PrivacyDeletionState.withDataAccess(appContext) {
+            context.ensureActive()
+            requireRequestAllowed(false)
+            if (currentInstallationId() != generation)
+                throw GatewayError("Installation changed while saving this train.", code = "installation_changed")
             try {
-                val data = JSONObject().put("storedAt", System.currentTimeMillis())
-                    .put("payload", payload).toString().toByteArray(Charsets.UTF_8)
-                output.write(data)
-                file.finishWrite(output)
-            } catch (error: Exception) {
-                file.failWrite(output)
-                throw error
+                if (!cacheFolder.exists() && !cacheFolder.mkdirs()) throw IOException("Could not create run cache")
+                val file = AtomicFile(File(cacheFolder, "$number-$date.json"))
+                val output = file.startWrite()
+                try {
+                    val data = JSONObject().put("storedAt", System.currentTimeMillis())
+                        .put("payload", payload).toString().toByteArray(Charsets.UTF_8)
+                    output.write(data)
+                    context.ensureActive()
+                    file.finishWrite(output)
+                } catch (error: Exception) {
+                    file.failWrite(output)
+                    throw error
+                }
+            } catch (_: IOException) {
+                // An optional disk-cache failure does not discard a valid live response.
             }
         }
     }
 
     private suspend fun readRun(number: String, date: String): Pair<Long, JSONObject>? = withContext(Dispatchers.IO) {
-        runCatching {
+        currentCoroutineContext().ensureActive()
+        try {
             val file = AtomicFile(File(cacheFolder, "$number-$date.json"))
             val saved = JSONObject(file.openRead().bufferedReader().use { it.readText() })
-            saved.getLong("storedAt") to saved.getJSONObject("payload")
-        }.getOrNull()
+            val at = saved.getLong("storedAt")
+            require(at > 0 && at <= System.currentTimeMillis() + 60_000) { "Invalid cache timestamp" }
+            at to saved.getJSONObject("payload")
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            null
+        }
     }
 
     private suspend fun rawRequest(path: String, method: String, token: String?, body: JSONObject?,
@@ -474,6 +612,14 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
             val localDebug = BuildConfig.DEBUG && uri.scheme == "http" && uri.host in setOf("localhost", "127.0.0.1", "10.0.2.2")
             return trimmed.takeIf { uri.scheme == "https" || localDebug }
         }
+
+        private fun JSONObject.requiredFinite(key: String): Double {
+            val value = get(key) as? Number ?: throw IllegalArgumentException("$key must be numeric")
+            return value.toDouble().also { require(it.isFinite()) { "$key must be finite" } }
+        }
+
+        private fun JSONObject.finiteOrNull(key: String): Double? =
+            if (isNull(key)) null else requiredFinite(key)
 
         private fun JSONObject.stringOrNull(key: String): String? =
             if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }

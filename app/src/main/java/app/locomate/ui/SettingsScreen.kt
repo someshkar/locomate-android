@@ -39,9 +39,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.locomate.ui.theme.LM
+import app.locomate.BuildConfig
+import app.locomate.data.AppAppearance
+import app.locomate.data.RailGateway
+import app.locomate.data.MapLighting
+import app.locomate.data.MapImagery
+import app.locomate.ui.theme.rememberAppearance
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.material3.FilterChip
 import app.locomate.data.CommunityConsent
 import app.locomate.data.JourneyAlertSubscription
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                    onOfficialRailway: () -> Unit, onExportData: () -> Unit,
@@ -54,11 +65,12 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                    alertNotice: String?,
                    onDisableAlerts: (String) -> Unit, onRetryAlerts: () -> Unit,
                    onContributionGrant: () -> Unit, onContributionRevoke: () -> Unit,
-                   onContributionBackground: (Boolean) -> Unit) {
+                   onContributionBackground: (Boolean) -> Unit, railGateway: RailGateway? = null) {
+    val (appearance, appearanceStore) = rememberAppearance()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showGrantConfirm by remember { mutableStateOf(false) }
     var showRevokeConfirm by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().background(Color(0xFF090A0D)).statusBarsPadding()
+    Column(Modifier.fillMaxSize().background(LM.Ground).statusBarsPadding()
         .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
         Spacer(Modifier.height(23.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -71,6 +83,29 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
         Spacer(Modifier.height(5.dp))
         Text("Rail data, privacy and source labels", color = LM.Ink2, fontSize = 14.sp)
         Spacer(Modifier.height(30.dp))
+        SettingsCard("APPEARANCE") {
+            Text("App", color = LM.Ink, fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppAppearance.entries.forEach { mode -> FilterChip(selected = appearance.app == mode,
+                    onClick = { appearanceStore.save(appearance.copy(app = mode)) }, label = { Text(mode.name) }) }
+            }
+            Text("Map lighting", color = LM.Ink, fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MapLighting.entries.forEach { mode -> FilterChip(selected = appearance.lighting == mode,
+                    onClick = { appearanceStore.save(appearance.copy(lighting = mode)) }, label = { Text(mode.name) }) }
+            }
+            Text("Auto follows daylight at the visible map center. It does not use your location.", color = LM.Ink2, fontSize = 13.sp)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MapImagery.entries.forEach { mode -> FilterChip(selected = appearance.imagery == mode,
+                    enabled = mode != MapImagery.Satellite || BuildConfig.MAP_SATELLITE_STYLE_URL.isNotBlank(),
+                    onClick = { appearanceStore.save(appearance.copy(imagery = mode)) }, label = { Text(mode.name) }) }
+            }
+            if (BuildConfig.MAP_SATELLITE_STYLE_URL.isBlank()) Text("Satellite imagery is unavailable for this build.", color = LM.Ink2, fontSize = 13.sp)
+            FilterChip(selected = appearance.rotation,
+                onClick = { appearanceStore.save(appearance.copy(rotation = !appearance.rotation)) },
+                label = { Text("Rotate map with gestures") })
+        }
+        Spacer(Modifier.height(14.dp))
         SettingsCard("RAIL DATA SOURCE") {
             Text(if (productionMode) "Gateway configured" else "Historical route preview",
                 color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
@@ -85,16 +120,16 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             Text("$savedCount saved journey${if (savedCount == 1) "" else "s"}",
                 color = LM.Ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            Text("Passport is stored locally. It contains train and station summaries, without PNR, seat, or personal location. Remove a journey from Passport at any time.",
+            Text("Passport is stored locally. It contains train and station summaries and any private coach/seat details you save. These details appear in your device export and never reach the gateway. Remove a journey from Passport at any time.",
                 color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
         }
         Spacer(Modifier.height(14.dp))
         SettingsCard("HOW TO READ STATUS") {
-            StatusLegend("OBSERVED", "A recorded train event", Color(0xFF37C982))
-            StatusLegend("PREDICTED", "A forecast, shown with its available range", Color(0xFFFFB84D))
+            StatusLegend("OBSERVED", "A recorded train event", LM.Success)
+            StatusLegend("PREDICTED", "A forecast, shown with its available range", LM.Warn)
             StatusLegend("SCHEDULED", "A published timetable time", LM.Ink2)
-            StatusLegend("STALE", "Last saved data while refresh is unavailable", Color(0xFFFFB84D))
-            StatusLegend("PREVIEW", "Historical sample, never live", Color(0xFFBCA7FF))
+            StatusLegend("STALE", "Last saved data while refresh is unavailable", LM.Warn)
+            StatusLegend("PREVIEW", "Historical sample, never live", LM.Replay)
         }
         Spacer(Modifier.height(14.dp))
         SettingsCard("JOURNEY ALERTS") {
@@ -103,7 +138,7 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             val visible = alertSubscriptions.filter { it.enabled || it.pending }
             if (alertReadError != null) {
                 Spacer(Modifier.height(10.dp))
-                Text(alertReadError, color = Color(0xFFFFB84D), fontSize = 14.sp)
+                Text(alertReadError, color = LM.Warn, fontSize = 14.sp)
             } else if (visible.isEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Text("No journey alerts enabled", color = LM.Ink, fontSize = 14.sp)
@@ -128,7 +163,7 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                 color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
             Spacer(Modifier.height(12.dp))
             Surface(shape = RoundedCornerShape(16.dp),
-                color = if (productionMode) Color(0xFF162B3D) else Color(0xFF272A30),
+                color = if (productionMode) LM.Raised else LM.Raised,
                 modifier = Modifier.fillMaxWidth().clickable(enabled = productionMode && !contributionBusy) {
                     if (contributionEnabled) showRevokeConfirm = true else showGrantConfirm = true
                 }) {
@@ -141,9 +176,11 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
                     fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(16.dp))
             }
+            if (productionMode) TextButton(enabled = !contributionBusy,
+                onClick = { showRevokeConfirm = true }) { Text("Withdraw public-number reporting consent") }
             if (contributionEnabled) {
                 Spacer(Modifier.height(10.dp))
-                Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF162B3D),
+                Surface(shape = RoundedCornerShape(16.dp), color = LM.Raised,
                     modifier = Modifier.fillMaxWidth().toggleable(value = contributionBackground,
                         enabled = !contributionBusy, role = Role.Switch, onValueChange = onContributionBackground)) {
                     Text(if (contributionBackground) "Background contribution: on" else "Background contribution: off",
@@ -153,10 +190,10 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             }
             if (withdrawalRetryNeeded && !contributionEnabled) {
                 Spacer(Modifier.height(10.dp))
-                Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF352020),
+                Surface(shape = RoundedCornerShape(16.dp), color = LM.Raised,
                     modifier = Modifier.fillMaxWidth().clickable(enabled = !contributionBusy,
                         onClick = onContributionRevoke)) {
-                    Text("Retry withdrawal and local cleanup", color = Color(0xFFFFB3B3),
+                    Text("Retry withdrawal and local cleanup", color = LM.Error,
                         fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(16.dp))
                 }
@@ -172,22 +209,24 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             }
         }
         Spacer(Modifier.height(14.dp))
+        PhysicalReportOutboxCard(railGateway, withdrawalRetryNeeded)
+        Spacer(Modifier.height(14.dp))
         SettingsCard("YOUR DATA") {
             Text("Export your gateway record and this device's saved journeys, plans, and cached runs. The file can contain location and session tokens; share it only with a destination you trust.",
                 color = LM.Ink2, fontSize = 14.sp, lineHeight = 20.sp)
             Spacer(Modifier.height(14.dp))
-            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF162B3D),
+            Surface(shape = RoundedCornerShape(16.dp), color = LM.Raised,
                 modifier = Modifier.fillMaxWidth().clickable(enabled = !privacyBusy, onClick = onExportData)) {
                 Text(if (privacyBusy) "Working…" else "Export my data", color = LM.Ink,
                     fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(16.dp))
             }
             Spacer(Modifier.height(10.dp))
-            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF352020),
+            Surface(shape = RoundedCornerShape(16.dp), color = LM.Raised,
                 modifier = Modifier.fillMaxWidth().clickable(enabled = !privacyBusy) {
                     showDeleteConfirm = true
                 }) {
-                Text("Delete my data", color = Color(0xFFFFB3B3),
+                Text("Delete my data", color = LM.Error,
                     fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(16.dp))
             }
@@ -197,7 +236,7 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
             }
         }
         Spacer(Modifier.height(25.dp))
-        Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFF162B3D),
+        Surface(shape = RoundedCornerShape(18.dp), color = LM.Raised,
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOfficialRailway)) {
             Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Open official NTES", color = LM.Ink, fontSize = 15.sp,
@@ -213,7 +252,7 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
         text = { Text("This removes your gateway installation, saved journeys, cached runs, alerts, and status card. It cannot be undone.") },
         confirmButton = {
             TextButton(onClick = { showDeleteConfirm = false; onDeleteData() }) {
-                Text("Delete server and device data", color = Color(0xFFD64949))
+                Text("Delete server and device data", color = LM.Error)
             }
         },
         dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
@@ -232,10 +271,10 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
     if (showRevokeConfirm) AlertDialog(
         onDismissRequest = { showRevokeConfirm = false },
         title = { Text("Withdraw contribution consent?") },
-        text = { Text("Collection stops immediately and queued observations are erased from this device.") },
+        text = { Text("Location collection stops immediately and queued observations are erased. The gateway receives withdrawal for community positions and public-number reports. Submitted number records remain subject to retention; use Delete my data to remove your gateway records.") },
         confirmButton = {
             TextButton(onClick = { showRevokeConfirm = false; onContributionRevoke() }) {
-                Text("Withdraw and delete", color = Color(0xFFD64949))
+                Text("Withdraw and delete", color = LM.Error)
             }
         },
         dismissButton = { TextButton(onClick = { showRevokeConfirm = false }) { Text("Cancel") } },
@@ -244,8 +283,8 @@ fun SettingsScreen(productionMode: Boolean, savedCount: Int, onBack: () -> Unit,
 
 @Composable
 private fun SettingsCard(label: String, content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(24.dp), color = Color(0xFF191B21),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+    Surface(shape = RoundedCornerShape(24.dp), color = LM.Elevated,
+        border = BorderStroke(1.dp, LM.Ink.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
             Text(label, color = LM.Ink3, fontSize = 11.sp, fontWeight = FontWeight.Bold,

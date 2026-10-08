@@ -30,6 +30,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import app.locomate.ui.theme.Motion
+import app.locomate.ui.theme.pressScale
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,6 +85,8 @@ import app.locomate.data.PrivacyDataManager
 import app.locomate.data.CommunityConsent
 import app.locomate.data.CommunityPreferences
 import app.locomate.data.CommunityQueue
+import app.locomate.data.PhysicalReportQueue
+import app.locomate.data.PhysicalReportSyncWork
 import app.locomate.data.CommunitySync
 import app.locomate.data.CommunityLocationFilter
 import app.locomate.data.CommunityLocationService
@@ -497,6 +506,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
         } else Crossfade(targetState = tab, label = "primary tab") { current ->
             when (current) {
                 Tab.Journeys -> JourneyScreen(
+                    onRelatedJourney = { train, date -> JourneyAlertLink.fromRunId("$train:$date")?.let(::openDatedJourney) },
                     route = selectedRoute,
                     bottomInset = dockInset,
                     railGateway = gateway,
@@ -590,6 +600,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                 Tab.Explore -> ExploreScreen(selectedRoute, gateway, bottomInset = dockInset,
                     onOpenJourney = ::openDatedJourney)
                 Tab.Passport -> if (settingsOpen) SettingsScreen(
+                    railGateway = gateway,
                     alertSubscriptions = alertSubscriptions,
                     alertReadError = alertReadError,
                     alertNotice = alertNotice,
@@ -633,7 +644,11 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                     },
                     onContributionRevoke = {
                         CommunityLocationService.stop(context)
-                        val persisted = runCatching { contributionPreferences.revoke() }.isSuccess
+                        PhysicalReportSyncWork.cancel(context)
+                        val persisted = runCatching {
+                            PhysicalReportQueue(context, gateway.sourceUrl).clear()
+                            contributionPreferences.revoke()
+                        }.isSuccess
                         contributionEnabled = contributionPreferences.enabled
                         contributionBackground = contributionPreferences.background
                         if (!persisted) {
@@ -744,7 +759,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                             if (previewRoute == null) {
                                 passportNotice = "This historical route pack is no longer available. Your saved summary remains on this device."
                             } else {
-                                val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
+                                val savedPlan = saved.personalPlan ?: JourneyPlan(saved.originCode, saved.destinationCode,
+                                    planStore.load(previewRoute).coach, planStore.load(previewRoute).seat)
                                 if (savedPlan.isValidFor(previewRoute)) planStore.save(previewRoute, savedPlan)
                                 planVersion++
                                 passportNotice = null
@@ -763,7 +779,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                                 try {
                                     val loaded = gateway.journey(saved.trainNumber, saved.originDate)
                                     if (selectionEpoch != selectedEpoch) return@launch
-                                    val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
+                                    val savedPlan = saved.personalPlan ?: JourneyPlan(saved.originCode, saved.destinationCode,
+                                        planStore.load(loaded).coach, planStore.load(loaded).seat)
                                     if (savedPlan.isValidFor(loaded)) planStore.save(loaded, savedPlan)
                                     planVersion++
                                     liveRoute = loaded
@@ -827,7 +844,9 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
                                 content: @Composable (Dp) -> Unit) {
     var dockHeightPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    val dockInset = maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
+    // While typing, the dock steps aside so results get the room above the keyboard.
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val dockInset = if (imeVisible) 16.dp else maxOf(115.dp, with(density) { dockHeightPx.toDp() } + 12.dp)
     val pageLayer = rememberGraphicsLayer()
     val backdrop = remember(pageLayer) { DockBackdrop(pageLayer) }
     androidx.compose.runtime.CompositionLocalProvider(LocalMapGlass provides mapGlass, LocalDockBackdrop provides backdrop) {
@@ -839,11 +858,20 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
                     drawLayer(pageLayer)
                     backdrop.pageDrawn()
                 }) { content(dockInset) }
-            CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .onSizeChanged { dockHeightPx = it.height }
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp))
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !imeVisible,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = androidx.compose.animation.slideInVertically(Motion.dockSpring) { it } +
+                    androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.slideOutVertically(Motion.dockSpring) { it } +
+                    androidx.compose.animation.fadeOut()
+            ) {
+                CapsuleNavBar(tab, onTab, onSearch, searchActive = searchActive,
+                    modifier = Modifier
+                        .onSizeChanged { dockHeightPx = it.height }
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp))
+            }
         }
     }
 }
@@ -852,8 +880,8 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
 fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier, searchActive: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     val fallback = Brush.verticalGradient(listOf(LM.DockTop, LM.DockBottom))
-    val lens = Brush.verticalGradient(listOf(Color(0xFF12131B).copy(alpha = 0.42f),
-        Color(0xFF12131B).copy(alpha = 0.26f)))
+    val lens = Brush.verticalGradient(listOf(LM.Elevated.copy(alpha = 0.42f),
+        LM.Elevated.copy(alpha = 0.26f)))
     Row(modifier.widthIn(max = 330.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(
             color = Color.Transparent,
@@ -862,29 +890,52 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
             modifier = Modifier.weight(1f).heightIn(min = 70.dp)
         ) {
             DockGlassSurface(Modifier.dockRim(36f)) { glass ->
-                Row(Modifier.background(if (glass) lens else fallback)
-                    .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val selectTab: (Tab) -> Unit = {
-                        haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                        onTab(it)
+                val tabs = listOf(Tab.Journeys, Tab.Explore, Tab.Passport)
+                val selectedIndex = tabs.indexOf(tab).takeUnless { searchActive || it < 0 }
+                androidx.compose.foundation.layout.BoxWithConstraints(
+                    Modifier.background(if (glass) lens else fallback).padding(8.dp)
+                ) {
+                    // One pill slides between tabs on a spring, as on iOS, rather
+                    // than each tab fading its own background in and out.
+                    val slot = maxWidth / tabs.size
+                    val pillOffset by androidx.compose.animation.core.animateDpAsState(
+                        slot * (selectedIndex ?: 0),
+                        app.locomate.ui.theme.motionSpec(androidx.compose.animation.core.spring(
+                            dampingRatio = 0.76f, stiffness = 584f)),
+                        label = "dock pill")
+                    val pillAlpha by androidx.compose.animation.core.animateFloatAsState(
+                        if (selectedIndex == null) 0f else 1f, label = "dock pill alpha")
+                    Box(Modifier.matchParentSize()) {
+                        Box(Modifier.offset(x = pillOffset).width(slot).fillMaxHeight()
+                            .graphicsLayer { alpha = pillAlpha }
+                            .background(LM.Ink.copy(alpha = 0.07f), RoundedCornerShape(27.dp))
+                            .dockRim(27f))
                     }
-                    NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", R.drawable.navigation_journeys, selectTab, Modifier.weight(1f))
-                    NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", R.drawable.navigation_explore, selectTab, Modifier.weight(1f))
-                    NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", R.drawable.navigation_passport, selectTab, Modifier.weight(1f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val selectTab: (Tab) -> Unit = {
+                            haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                            onTab(it)
+                        }
+                        NavItem(Tab.Journeys, tab.takeUnless { searchActive }, "Journeys", R.drawable.navigation_journeys, selectTab, Modifier.weight(1f))
+                        NavItem(Tab.Explore, tab.takeUnless { searchActive }, "Explore", R.drawable.navigation_explore, selectTab, Modifier.weight(1f))
+                        NavItem(Tab.Passport, tab.takeUnless { searchActive }, "Passport", R.drawable.navigation_passport, selectTab, Modifier.weight(1f))
+                    }
                 }
             }
         }
         Spacer(Modifier.width(14.dp))
+        val searchPress = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
         Surface(
             onClick = onSearch,
             color = Color.Transparent,
             shape = CircleShape,
             shadowElevation = 20.dp,
-            modifier = Modifier.size(60.dp).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
+            interactionSource = searchPress,
+            modifier = Modifier.size(60.dp).pressScale(searchPress, 0.9f).semantics { contentDescription = "Search trains"; selected = searchActive; role = Role.Tab }
         ) {
             DockGlassSurface(Modifier.dockRim(30f)) { glass ->
                 Box(Modifier.fillMaxSize().background(if (glass) lens else fallback), contentAlignment = Alignment.Center) {
-                    Icon(painterResource(R.drawable.navigation_search), contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                    Icon(painterResource(R.drawable.navigation_search), contentDescription = null, tint = LM.Ink, modifier = Modifier.size(23.dp))
                 }
             }
         }
@@ -902,24 +953,21 @@ private fun NavItem(
 ) {
     val active = item == selected
     val showLabel = LocalDensity.current.fontScale < 1.8f
-    val color by animateColorAsState(if (active) Color.White else LM.DockLabel, label = "nav ink")
-    val container by animateColorAsState(
-        if (active) Color.White.copy(alpha = 0.07f) else Color.Transparent,
-        animationSpec = spring(),
-        label = "nav selection"
-    )
+    val color by animateColorAsState(if (active) LM.Ink else LM.DockLabel, label = "nav ink")
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Surface(
         onClick = { onTab(item) },
-        color = container,
+        color = Color.Transparent,
         shape = RoundedCornerShape(27.dp),
-        modifier = modifier.fillMaxWidth().heightIn(min = 54.dp)
+        interactionSource = interaction,
+        modifier = modifier.fillMaxWidth().heightIn(min = 54.dp).pressScale(interaction, 0.92f)
             .semantics {
                 contentDescription = label
                 this.selected = active
                 role = Role.Tab
             }
     ) {
-        Column(Modifier.then(if (active) Modifier.dockRim(27f) else Modifier).padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.padding(vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
             Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.size(21.dp))
             Spacer(Modifier.height(4.dp))

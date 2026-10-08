@@ -389,7 +389,7 @@ class CoreAccessibilityTest {
 
     @Test fun networkTrainListExposesMarkerSourceAndDatedRunWithoutMapGestures() {
         val train = NetworkTrain("12951:2026-10-01", "12951", "Mumbai Rajdhani", "2026-10-01",
-            RailPoint(19.0, 72.8), "2026-10-01T10:00:00Z", "observed", "station-report", 8)
+            RailPoint(19.0, 72.8), "2026-10-01T10:00:00Z", "observed", "station-report", 8.0)
         compose.setContent { AuditTheme {
             NetworkTrainListDialog(NetworkSnapshot(listOf(train), train.observedAt, "2026-10-01T10:05:00Z"), {}, onOpenTrain = {})
         } }

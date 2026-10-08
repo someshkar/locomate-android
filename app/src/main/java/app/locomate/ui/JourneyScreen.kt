@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -83,6 +84,12 @@ import androidx.compose.ui.text.withStyle
 import app.locomate.data.RailTimeText
 import app.locomate.data.RailGateway
 import app.locomate.ui.theme.LM
+import app.locomate.ui.theme.Motion
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import app.locomate.ui.theme.PlexMono
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -100,13 +107,13 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                   onCalendar: () -> Unit = {}, onShare: () -> Unit = {}, onEdit: () -> Unit = {},
                   onSearch: () -> Unit = {}, onStatusCard: () -> Unit = {},
                   alertStatus: String? = null, onAlerts: () -> Unit = {}, railGateway: RailGateway? = null,
-                  bottomInset: Dp = 0.dp) {
+                  bottomInset: Dp = 0.dp, onRelatedJourney: (String, String) -> Unit = { _, _ -> }) {
     val haptics = LocalHapticFeedback.current
     val (reliability, retryReliability) = rememberTrainReliability(route, railGateway)
     val segment = plan?.takeIf { route != null && it.isValidFor(route) }
     val boarding = route?.calls?.firstOrNull { it.code == segment?.boardingCode }
     val alighting = route?.calls?.firstOrNull { it.code == segment?.alightingCode }
-    val fullRoute = route != null && (segment == null || segment == JourneyPlan.default(route))
+    val fullRoute = route != null && (segment == null || segment.isWholeRun(route))
     val calendarStart = if (fullRoute) route?.departureInstantMillis
         else boarding?.scheduledDepartureMillis ?: boarding?.scheduledArrivalMillis
     val calendarEnd = if (fullRoute) route?.arrivalInstantMillis else alighting?.scheduledArrivalMillis
@@ -114,7 +121,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         "${boarding.name} to ${alighting.name}" else route?.routeLabel
     val mapAttribution = remember { MapAttributionController() }
     val journeyCamera = remember { JourneyMapController() }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF080B12))) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(LM.Ground)) {
         val density = LocalDensity.current
         val screenHeightPx = with(density) { maxHeight.toPx() }
         val expandedTop = screenHeightPx * 0.10f
@@ -122,6 +129,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         val collapsedTop = if (route == null) minOf(standardCollapsedTop,
             with(density) { (maxHeight - 520.dp).toPx() }.coerceAtLeast(expandedTop)) else standardCollapsedTop
         val largeText = density.fontScale >= 1.5f
+        val compactHeight = maxHeight < 480.dp
         var sheetTop by remember(screenHeightPx, largeText, route == null) {
             mutableFloatStateOf(if (largeText) expandedTop else collapsedTop)
         }
@@ -161,15 +169,15 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
             color = Color.Transparent,
             shape = RoundedCornerShape(topStart = LM.RadiusSheet, topEnd = LM.RadiusSheet),
             shadowElevation = 28.dp,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            border = BorderStroke(1.dp, LM.Ink.copy(alpha = 0.12f)),
             modifier = Modifier.fillMaxWidth()
                 .height(maxHeight * 0.90f)
                 .offset { IntOffset(0, sheetTop.roundToInt()) }
         ) {
             MapGlassSurface { glass ->
                 Column(Modifier.background(if (glass) Brush.verticalGradient(
-                    0f to Color(0x80111119), 0.20f to Color(0xE00F0F16), 1f to Color(0xFA0E0E15))
-                    else Brush.verticalGradient(listOf(Color(0xF00B0C16), Color(0xFA090A12))))
+                    0f to LM.Elevated.copy(alpha = 0.502f), 0.20f to LM.Elevated.copy(alpha = 0.878f), 1f to LM.Elevated.copy(alpha = 0.980f))
+                    else Brush.verticalGradient(listOf(LM.Elevated.copy(alpha = 0.941f), LM.Elevated.copy(alpha = 0.980f))))
                     .padding(bottom = (hiddenSheetHeight + bottomInset).coerceAtLeast(0.dp))) {
                     // Scrolled action touch bounds must not occlude this fixed header.
                     Column(
@@ -205,7 +213,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                                 contentDescription = if (expanded) "Collapse journey details" else "Expand journey details"
                                 stateDescription = if (expanded) "Expanded" else "Collapsed"
                             }, contentAlignment = Alignment.Center) {
-                            Box(Modifier.size(width = 40.dp, height = 5.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.42f)))
+                            Box(Modifier.size(width = 40.dp, height = 5.dp).clip(CircleShape).background(LM.Ink.copy(alpha = 0.42f)))
                         }
                         MapAttributionButton(mapAttribution)
                         }
@@ -218,7 +226,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                                     contentDescription = if (saved) "Remove saved journey" else "Save journey"
                                     stateDescription = if (saved) "Saved" else "Not saved"
                                 }, contentAlignment = Alignment.Center) {
-                                Box(Modifier.fillMaxSize().clip(CircleShape).background(Color.White.copy(alpha = 0.09f)),
+                                Box(Modifier.fillMaxSize().clip(CircleShape).background(LM.Ink.copy(alpha = 0.09f)),
                                     contentAlignment = Alignment.Center) {
                                     Icon(if (saved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
                                         contentDescription = null,
@@ -234,37 +242,40 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         Column {
                         if (route == null) {
                             Spacer(Modifier.height(15.dp))
+                            // In short windows the recovery action must be visible immediately;
+                            // the explanation remains in the ordinary scrollable sheet below it.
+                            if (compactHeight) {
+                                FindTrainAction(onSearch)
+                                Spacer(Modifier.height(24.dp))
+                            }
                             Text("Every journey starts here.", color = LM.Ink, fontSize = 29.sp,
                                 fontWeight = FontWeight.Bold, lineHeight = 33.sp)
                             Spacer(Modifier.height(12.dp))
                             Text(message ?: "Find a train and choose its India origin date to see the route, station times and source of every update.",
                                 color = LM.Ink2, fontSize = 15.sp, lineHeight = 22.sp)
-                            Spacer(Modifier.height(24.dp))
-                            Surface(onClick = onSearch, color = LM.Accent, shape = RoundedCornerShape(17.dp),
-                                modifier = Modifier.fillMaxWidth()) {
-                                Row(Modifier.padding(17.dp), horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.Search, contentDescription = null, tint = Color.Black,
-                                        modifier = Modifier.size(20.dp))
-                                    Text("Find your train", color = Color.Black, fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
-                                }
+                            if (!compactHeight) {
+                                Spacer(Modifier.height(24.dp))
+                                FindTrainAction(onSearch)
                             }
                             Spacer(Modifier.height(24.dp))
                         } else {
-                        Surface(color = Color.Black.copy(alpha = 0.12f), shape = RoundedCornerShape(22.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                        Surface(color = LM.OnAccent.copy(alpha = 0.12f), shape = RoundedCornerShape(22.dp),
+                            border = BorderStroke(1.dp, LM.Ink.copy(alpha = 0.08f)),
                             modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(20.dp)) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("${route.trainNumber} · ${route.displayName}",
                                 color = LM.Ink2, fontSize = 14.sp)
-                            Text(route?.statusLabel ?: "SEARCH TO START", color = if (route?.isPreview == true) Color(0xFFBCA7FF) else LM.Accent,
+                            Text(route?.statusLabel ?: "SEARCH TO START", color = if (route?.isPreview == true) LM.Replay else LM.Accent,
                                 fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                         }
                         Spacer(Modifier.height(12.dp))
                         ScheduledDepartureCountdown(route, segment)
+                        if (segment != null && (segment.coach.isNotBlank() || segment.seat.isNotBlank()))
+                            Text(listOf(segment.coach.takeIf { it.isNotBlank() }?.let { "Private coach $it" },
+                                segment.seat.takeIf { it.isNotBlank() }?.let { "Seat $it" }).filterNotNull().joinToString(" · "),
+                                color = LM.Ink2, fontSize = 13.sp)
                         Text(segmentLabel ?: "Find your train", color = LM.Ink, fontSize = 17.sp,
                             fontWeight = FontWeight.SemiBold, lineHeight = 22.sp)
                         Spacer(Modifier.height(3.dp))
@@ -272,7 +283,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             else message ?: route.sourceDetail, color = LM.Ink3, fontSize = 13.sp)
                         route?.etaBand?.let { band ->
                             Spacer(Modifier.height(8.dp))
-                            Text(band, color = if (route.statusLabel.startsWith("STALE")) Color(0xFFC7A377) else LM.Accent,
+                            Text(band, color = if (route.statusLabel.startsWith("STALE")) LM.Warn else LM.Accent,
                                 fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Spacer(Modifier.height(16.dp))
@@ -297,7 +308,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         }
                         Spacer(Modifier.height(18.dp))
                         if (expanded && route != null && route.calls.size > 1) {
-                            Surface(onClick = onEdit, color = Color(0xFF252830),
+                            Surface(onClick = onEdit, color = LM.Raised,
                                 shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().semantics {
                                     contentDescription = "Edit boarding and alighting stops. Board at ${boarding?.code ?: route.originCode}, leave at ${alighting?.code ?: route.destinationCode}"
                                 }) {
@@ -311,10 +322,12 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             }
                         }
                         Spacer(Modifier.height(18.dp))
-                        Surface(color = if (route?.isPreview == true) Color(0xFF24202F) else Color(0xFF172532),
+                        // The card already carries status and source; repeat them only when a
+                        // message has taken the card's source line, or for previews and the empty state.
+                        if (route == null || route.isPreview || message != null) Surface(color = LM.Raised,
                             shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.Info, contentDescription = null, tint = Color(0xFFBCA7FF), modifier = Modifier.size(20.dp))
+                                Icon(Icons.Outlined.Info, contentDescription = null, tint = LM.Replay, modifier = Modifier.size(20.dp))
                                 Text(when {
                                     route == null -> "Search for a dated train run to see its status."
                                     route.isPreview -> "Route replay uses historical sample data. Nothing here is live."
@@ -325,7 +338,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         }
                         Spacer(Modifier.height(18.dp))
                         if (route != null) {
-                            Surface(onClick = onAlerts, color = Color(0xFF173346),
+                            Surface(onClick = onAlerts, color = LM.Raised,
                                 shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()
                                     .semantics { contentDescription = "Journey alerts" }) {
                                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -341,7 +354,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp), maxItemsInEachRow = if (largeText) 1 else 3) {
                                 Surface(onClick = onStatusCard,
-                                    color = if (statusCardEnabled) Color(0xFF173346) else Color(0xFF242832),
+                                    color = if (statusCardEnabled) LM.Raised else LM.Raised,
                                     shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f).semantics {
                                         contentDescription = if (statusCardEnabled) "Turn status card off" else "Turn status card on"
                                         stateDescription = if (statusCardEnabled) "On" else "Off"
@@ -356,7 +369,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                                 }
                                 if (!route.isPreview && calendarStart != null && calendarEnd != null) {
                                     Surface(onClick = onCalendar,
-                                        color = Color(0xFF242832), shape = RoundedCornerShape(18.dp),
+                                        color = LM.Raised, shape = RoundedCornerShape(18.dp),
                                         modifier = Modifier.weight(1f).semantics { contentDescription = "Add journey to calendar" }) {
                                         Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
                                             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -367,7 +380,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                                         }
                                     }
                                 }
-                                Surface(onClick = onShare, color = Color(0xFF242832),
+                                Surface(onClick = onShare, color = LM.Raised,
                                     shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f)
                                         .semantics { contentDescription = "Share journey" }) {
                                     Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
@@ -388,6 +401,10 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                             item(key = "reliability") {
                                 TrainReliabilityCard(reliability, retryReliability)
                                 Spacer(Modifier.height(23.dp))
+                            }
+                            item(key = "working-chains") {
+                                WorkingChainCard(route, railGateway, onRelatedJourney)
+                                if (!route.isPreview) Spacer(Modifier.height(23.dp))
                             }
                             item(key = "timeline-heading") {
                                 Text("Station timeline", color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
@@ -412,7 +429,7 @@ private fun MapCameraButton(label: String, icon: androidx.compose.ui.graphics.ve
     Box(Modifier.size(48.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
         MapGlassSurface(Modifier.fillMaxSize().clip(CircleShape)) { glass ->
-            Box(Modifier.fillMaxSize().background(if (glass) Color(0x9E16161E) else Color(0xF0202125)),
+            Box(Modifier.fillMaxSize().background(if (glass) LM.Elevated.copy(alpha = 0.620f) else LM.Elevated.copy(alpha = 0.941f)),
                 contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = if (enabled) LM.Ink else LM.Ink3, modifier = Modifier.size(20.dp))
             }
@@ -422,20 +439,26 @@ private fun MapCameraButton(label: String, icon: androidx.compose.ui.graphics.ve
 
 @Composable
 private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?) {
-    val boarding = remember(route, plan) { RailTimeText.boardingDeparture(route, plan) } ?: return
+    val boarding = remember(route, plan) { RailTimeText.boardingDeparture(route, plan) }
+    val alighting = remember(route, plan) { RailTimeText.alightingArrival(route, plan) }
+    if (boarding == null && alighting == null) return
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var now by remember(boarding) { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(boarding, lifecycle) {
+    var now by remember(boarding, alighting) { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(boarding, alighting, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (isActive) {
                 now = System.currentTimeMillis()
-                val remaining = boarding.departureAtMillis - now
-                if (remaining <= 0) awaitCancellation()
-                delay(minOf(60_000, remaining))
+                // Tick to the departure first, then on to the arrival.
+                val next = listOfNotNull(boarding?.departureAtMillis, alighting?.departureAtMillis).firstOrNull { it > now }
+                    ?: awaitCancellation()
+                delay(minOf(60_000, next - now))
             }
         }
     }
-    RailTimeText.untilScheduledDeparture(boarding.departureAtMillis, now)?.let { countdown ->
+    val departing = boarding?.let { RailTimeText.untilScheduledDeparture(it.departureAtMillis, now) }
+    val arriving = if (departing == null) alighting?.let { RailTimeText.untilScheduledArrival(it.departureAtMillis, now) } else null
+    val station = if (departing != null) boarding?.stationCode else alighting?.stationCode
+    (departing ?: arriving)?.let { countdown ->
         val styled = buildAnnotatedString {
             var cursor = 0
             for (match in Regex("[0-9]+").findAll(countdown)) {
@@ -447,11 +470,30 @@ private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?)
             }
             append(countdown.substring(cursor))
         }
-        Text(styled, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
+        androidx.compose.animation.AnimatedContent(styled, label = "countdown",
+            transitionSpec = { (fadeIn(Motion.fadeNormal()) + slideInVertically { -it / 3 }) togetherWith
+                (fadeOut(Motion.fadeFast()) + slideOutVertically { it / 3 }) }) { text ->
+            Text(text, color = LM.Ink2, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 30.sp)
+        }
         Spacer(Modifier.height(5.dp))
-        Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}Scheduled boarding at ${boarding.stationCode}",
+        Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}${
+            if (departing != null) "Scheduled boarding" else "Scheduled arrival"} at $station",
             color = LM.Ink2, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun FindTrainAction(onSearch: () -> Unit) {
+    Surface(onClick = onSearch, color = LM.Accent, shape = RoundedCornerShape(17.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Row(Modifier.padding(17.dp), horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.OnAccent,
+                modifier = Modifier.size(20.dp))
+            Text("Find your train", color = LM.OnAccent, fontWeight = FontWeight.Bold,
+                fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
+        }
     }
 }
 
@@ -472,10 +514,10 @@ internal fun TimelineStop(stop: RouteStop, preview: Boolean, stale: Boolean, fir
         else -> "SCHEDULED"
     }
     val stateColor = when {
-        preview -> Color(0xFFBCA7FF)
-        stale -> Color(0xFFFFB84D)
-        observed -> Color(0xFF37C982)
-        forecast -> Color(0xFFFFB84D)
+        preview -> LM.Replay
+        stale -> LM.Warn
+        observed -> LM.Success
+        forecast -> LM.Warn
         else -> LM.Ink3
     }
     val primaryTime = when {
@@ -539,7 +581,7 @@ private fun PlatformBadge(platform: String, stale: Boolean) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Platform", color = LM.Ink2, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium)
             Text(platform, color = LM.Ink, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, fontFamily = PlexMono)
-            if (stale) Text("Last known", color = Color(0xFFFFB84D), fontSize = 11.sp, lineHeight = 14.sp)
+            if (stale) Text("Last known", color = LM.Warn, fontSize = 11.sp, lineHeight = 14.sp)
         }
     }
 }
@@ -548,8 +590,8 @@ private fun PlatformBadge(platform: String, stale: Boolean) {
 private fun StationTime(code: String, name: String, clock: JourneySummaryClock, largeText: Boolean, daySuffix: String = "") {
     val tone = when (clock.evidence) {
         JourneySummaryClock.Evidence.Scheduled -> LM.Ink
-        JourneySummaryClock.Evidence.Estimated -> Color(0xFFFFB84D)
-        JourneySummaryClock.Evidence.Recorded -> Color(0xFF37C982)
+        JourneySummaryClock.Evidence.Estimated -> LM.Warn
+        JourneySummaryClock.Evidence.Recorded -> LM.Success
     }
     Column(Modifier.semantics(mergeDescendants = true) { contentDescription = name }) {
         if (largeText) {

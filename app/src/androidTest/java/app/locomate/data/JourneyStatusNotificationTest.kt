@@ -3,6 +3,7 @@ package app.locomate.data
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.service.notification.StatusBarNotification
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -122,12 +123,12 @@ class JourneyStatusNotificationTest {
         card.cancel()
         try {
             assertTrue(card.enable(route))
-            assertTrue(manager.activeNotifications.any { it.id == 1001 && it.tag == null })
+            awaitNotification(manager)
             now += 10 * 60_000L + 1
             val restored = JourneyStatusNotification(context) { now }
             assertFalse(restored.refresh(route))
             assertNull(restored.activeRun())
-            assertTrue(manager.activeNotifications.none { it.id == 1001 && it.tag == null })
+            awaitNoNotification(manager)
             assertFalse(restored.applyPush(mapOf(
                 "event" to "update", "runId" to requireNotNull(route.runId),
                 "trainNumber" to route.trainNumber, "originDate" to requireNotNull(route.runDate),
@@ -151,24 +152,19 @@ class JourneyStatusNotificationTest {
         try {
             listOf("gatewayScope" to "other-gateway", "runId" to "12951:2026-10-02").forEach { (key, value) ->
                 assertTrue(card.enable(route))
-                val active = manager.activeNotifications.single { it.id == 1001 && it.tag == null }
+                val active = awaitNotification(manager)
                 val foreign = Notification.Builder(context, active.notification.channelId)
                     .setSmallIcon(active.notification.smallIcon)
                     .setContentTitle("Foreign journey")
                     .setExtras(android.os.Bundle(active.notification.extras).apply { putString(key, value) })
                     .build()
                 manager.notify(1001, foreign)
-                val deadline = android.os.SystemClock.uptimeMillis() + 2_000
-                while (manager.activeNotifications.firstOrNull { it.id == 1001 && it.tag == null }
-                        ?.notification?.extras?.getString(key) != value &&
-                    android.os.SystemClock.uptimeMillis() < deadline) {
-                    Thread.sleep(20)
-                }
-                assertEquals(value, manager.activeNotifications.single { it.id == 1001 && it.tag == null }
-                    .notification.extras.getString(key))
+                assertEquals(value, awaitNotification(manager) {
+                    it.notification.extras.getString(key) == value
+                }.notification.extras.getString(key))
                 assertFalse(JourneyStatusNotification(context).refresh(route))
                 assertNull(card.activeRun())
-                assertTrue(manager.activeNotifications.none { it.id == 1001 && it.tag == null })
+                awaitNoNotification(manager)
             }
         } finally {
             card.cancel()
@@ -194,14 +190,9 @@ class JourneyStatusNotificationTest {
             Thread.sleep(1_200)
             now += 9 * 60_000L
             assertTrue(card.refresh(route))
-            val refreshedDeadline = android.os.SystemClock.uptimeMillis() + 10_000
-            while (manager.activeNotifications.single { it.id == 1001 && it.tag == null }
-                    .notification.timeoutAfter != 60_000L &&
-                android.os.SystemClock.uptimeMillis() < refreshedDeadline) {
-                Thread.sleep(20)
-            }
-            assertEquals(60_000L, manager.activeNotifications.single { it.id == 1001 && it.tag == null }
-                .notification.timeoutAfter)
+            assertEquals(60_000L, awaitNotification(manager) {
+                it.notification.timeoutAfter == 60_000L
+            }.notification.timeoutAfter)
 
             now += 60_000L
             assertFalse(card.enable(route))
@@ -244,14 +235,27 @@ class JourneyStatusNotificationTest {
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
         assertNotNull(expected)
         val manager = context.getSystemService(NotificationManager::class.java)
+        assertEquals(expected, awaitNotification(manager) {
+            it.notification.contentIntent == expected
+        }.notification.contentIntent)
+    }
+
+    private fun awaitNotification(manager: NotificationManager,
+                                  matches: (StatusBarNotification) -> Boolean = { true }): StatusBarNotification {
         val deadline = android.os.SystemClock.uptimeMillis() + 10_000
-        var visible = manager.activeNotifications.single { it.id == 1001 && it.tag == null }
-        while (visible.notification.contentIntent != expected &&
-            android.os.SystemClock.uptimeMillis() < deadline) {
+        do {
+            manager.activeNotifications.firstOrNull { it.id == 1001 && it.tag == null && matches(it) }
+                ?.let { return it }
             Thread.sleep(20)
-            visible = manager.activeNotifications.single { it.id == 1001 && it.tag == null }
-        }
-        assertEquals(expected, visible.notification.contentIntent)
+        } while (android.os.SystemClock.uptimeMillis() < deadline)
+        throw AssertionError("Expected status notification was not published within 10 seconds")
+    }
+
+    private fun awaitNoNotification(manager: NotificationManager) {
+        val deadline = android.os.SystemClock.uptimeMillis() + 10_000
+        while (manager.activeNotifications.any { it.id == 1001 && it.tag == null } &&
+            android.os.SystemClock.uptimeMillis() < deadline) Thread.sleep(20)
+        assertTrue(manager.activeNotifications.none { it.id == 1001 && it.tag == null })
     }
 
     private fun productionRoute(context: Context) = PreviewRoutes.load(context).first().copy(

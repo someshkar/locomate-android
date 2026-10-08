@@ -10,7 +10,7 @@ class NetworkFreshnessTest {
     private val now = Instant.parse("2026-10-01T10:00:00Z").toEpochMilli()
     private fun time(value: Long) = Instant.ofEpochMilli(value).toString()
     private val train = NetworkTrain("12951:2026-10-01", "12951", "Rajdhani", "2026-10-01",
-        RailPoint(19.0, 72.8), time(now), "observed", "official", 0)
+        RailPoint(19.0, 72.8), time(now), "observed", "official", 0.0)
     private fun snapshot(trains: List<NetworkTrain> = listOf(train)) =
         NetworkSnapshot(trains, time(now), time(now + 60_000))
 

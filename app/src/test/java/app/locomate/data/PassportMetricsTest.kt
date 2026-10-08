@@ -142,4 +142,14 @@ class PassportMetricsTest {
         departureInstantMillis = millis("2026-10-01T10:00:00+05:30"),
         arrivalInstantMillis = millis("2026-10-04T02:10:00+05:30"),
     )
+    @Test fun fractionalAndSubminuteDurationsRemainExactInSavedMetrics() {
+        val full = timedRoute(null, null).copy(durationMinutes = 80, durationMillis = 4_830_000)
+        val saved = SavedJourney.from(full)
+        assertEquals(4_830_000L, saved.scheduledDurationMillis)
+        assertEquals("1h 20m 30s", PassportMetrics.from(listOf(saved)).scheduledDurationLabel)
+        val short = saved.copy(durationMinutes = 0, durationMillis = 30_000)
+        assertEquals("30s", PassportMetrics.from(listOf(short)).scheduledDurationLabel)
+        assertEquals("1h 21m", PassportMetrics.from(listOf(saved, short)).scheduledDurationLabel)
+    }
+
 }

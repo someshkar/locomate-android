@@ -78,16 +78,16 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
     } ?: "${thisYearMetrics.runCount} saved ${if (thisYearMetrics.runCount == 1) "run" else "runs"} · distance unavailable"
     val mapAttribution = remember { MapAttributionController() }
     val periodColors = FilterChipDefaults.filterChipColors(
-        containerColor = Color.White.copy(alpha = 0.05f),
+        containerColor = LM.Ink.copy(alpha = 0.05f),
         labelColor = LM.Ink2,
-        selectedContainerColor = Color.White.copy(alpha = 0.12f),
-        selectedLabelColor = Color.White,
+        selectedContainerColor = LM.Ink.copy(alpha = 0.12f),
+        selectedLabelColor = LM.Ink,
     )
     OverviewMapLayout(bottomInset,
         glassTint = Brush.verticalGradient(
-            0f to Color(0xFF0B0C16).copy(alpha = 0.55f),
-            0.2f to Color(0xFF0A0B14).copy(alpha = 0.94f),
-            1f to Color(0xFF090A12).copy(alpha = 0.99f)),
+            0f to LM.Ground.copy(alpha = 0.55f),
+            0.2f to LM.Ground.copy(alpha = 0.94f),
+            1f to LM.Ground.copy(alpha = 0.99f)),
         map = { modifier, viewport ->
             // Saved summaries have no verified route geometry. This is an unannotated basemap.
             RailMap(null, modifier = modifier, attribution = mapAttribution, visibleViewport = viewport)
@@ -104,7 +104,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
             Text("Your saved rail runs, kept privately on this device.", color = LM.Ink2, fontSize = 15.sp, lineHeight = 21.sp)
             if (notice != null) {
                 Spacer(Modifier.height(13.dp))
-                Text(notice, color = Color(0xFFFFB84D), fontSize = 13.sp, lineHeight = 19.sp)
+                Text(notice, color = LM.Warn, fontSize = 13.sp, lineHeight = 19.sp)
             }
             Spacer(Modifier.height(20.dp))
             Text("Train origin year", color = LM.Ink2, fontSize = 12.sp)
@@ -120,24 +120,24 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
             Surface(
                 color = Color.Transparent,
                 shape = RoundedCornerShape(26.dp),
-                border = BorderStroke(1.dp, Color(0xFF9678FF).copy(alpha = 0.22f)),
+                border = BorderStroke(1.dp, LM.Replay.copy(alpha = 0.22f)),
                 shadowElevation = 20.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.background(Brush.linearGradient(
-                    listOf(Color(0xFF17123A), Color(0xFF100D28), Color(0xFF0A0A1C)))).padding(22.dp)) {
-                    Text("SAVED RUNS · ${year ?: "ALL-TIME"}", color = Color(0xFFC7BBE7), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                    listOf(LM.Raised, LM.Raised, LM.Ground))).padding(22.dp)) {
+                    Text("SAVED RUNS · ${year ?: "ALL-TIME"}", color = LM.Replay, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                     Spacer(Modifier.height(17.dp))
                     val distance = metrics.knownDistanceKm
                     Text(buildAnnotatedString {
                         if (savedRuns.isEmpty()) append("Your first run awaits")
                         else if (distance != null) {
                             append(java.text.NumberFormat.getIntegerInstance(java.util.Locale.forLanguageTag("en-IN")).format(distance))
-                            withStyle(SpanStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFFCFBBF6))) {
+                            withStyle(SpanStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LM.Replay)) {
                                 append(" km")
                             }
                         } else append("Distance unavailable")
-                    }, color = Color.White,
+                    }, color = LM.Ink,
                         fontSize = if (distance != null && savedRuns.isNotEmpty()) 56.sp else 29.sp,
                         fontWeight = FontWeight.ExtraBold, lineHeight = if (distance != null) 60.sp else 36.sp,
                         letterSpacing = if (savedRuns.isEmpty()) 0.sp else (-2).sp)
@@ -145,7 +145,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                     Text(if (savedRuns.isNotEmpty()) "Distance in saved runs. This is not verified travel history."
                         else if (metrics.previewCount > 0) "${metrics.previewCount} sample route${if (metrics.previewCount == 1) "" else "s"} saved separately. Preview routes are not counted as travel."
                         else "Save a dated journey to start your private collection.",
-                        color = Color(0xFFCFBBF6), fontSize = 14.sp, lineHeight = 21.sp)
+                        color = LM.Replay, fontSize = 14.sp, lineHeight = 21.sp)
                     if (savedRuns.isNotEmpty()) {
                         Spacer(Modifier.height(20.dp))
                         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -160,8 +160,8 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
             }
             if (year == null && thisYearMetrics.runCount > 0) {
                 Spacer(Modifier.height(16.dp))
-                Surface(color = Color(0xFF17171D), shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                Surface(color = LM.Elevated, shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.dp, LM.Ink.copy(alpha = 0.06f)),
                     modifier = Modifier.fillMaxWidth()
                         .semantics {
                             contentDescription = "Show $indiaYear saved runs"
@@ -185,9 +185,9 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                 filteredRoutes.forEach { route ->
                 val unavailableReason = route.openUnavailableReason()
                 Surface(
-                    color = Color(0xFF1A1C22),
+                    color = LM.Elevated,
                     shape = RoundedCornerShape(23.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    border = BorderStroke(1.dp, LM.Ink.copy(alpha = 0.08f)),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
                         .clickable(enabled = unavailableReason == null) { onOpen(route) }
                 ) {
@@ -210,7 +210,7 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
                 }
                 }
             } else {
-                Surface(color = Color(0xFF1A1C22), shape = RoundedCornerShape(23.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = LM.Elevated, shape = RoundedCornerShape(23.dp), modifier = Modifier.fillMaxWidth()) {
                     Text("No journeys saved yet", color = LM.Ink2, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
                 }
             }
@@ -223,9 +223,9 @@ fun PassportScreen(savedRoutes: List<SavedJourney>, notice: String? = null, onRe
 @Composable
 private fun PassportMetric(label: String, value: String, modifier: Modifier) {
     Column(modifier.semantics(mergeDescendants = true) {}) {
-        Text(label, color = Color(0xFFBEACF1), fontSize = 10.sp, fontWeight = FontWeight.Bold,
+        Text(label, color = LM.Replay, fontSize = 10.sp, fontWeight = FontWeight.Bold,
             letterSpacing = 0.5.sp)
         Spacer(Modifier.height(5.dp))
-        Text(value, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+        Text(value, color = LM.Ink, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
     }
 }

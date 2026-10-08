@@ -8,7 +8,7 @@ class NetworkSelectionTest {
     private val now = Instant.parse("2026-10-01T10:00:00Z").toEpochMilli()
     private fun time(value: Long) = Instant.ofEpochMilli(value).toString()
     private val train = NetworkTrain("opaque-shared-id", "12137", "99999 · Misleading display name", "2026-10-02",
-        RailPoint(23.7, 76.0), time(now), "observed", "official", 0)
+        RailPoint(23.7, 76.0), time(now), "observed", "official", 0.0)
 
     @Test fun datedSelectionUsesStructuredFieldsAndRejectsInvalidDates() {
         val selection = NetworkSelection.resolve(listOf(train), listOf(train)) as NetworkSelection.Journey

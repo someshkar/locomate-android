@@ -2,6 +2,14 @@ package app.locomate.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import android.app.Activity
+import app.locomate.data.AppAppearance
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.Font
@@ -9,19 +17,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import app.locomate.R
 
-private val Dark = darkColorScheme(
-    primary = LM.Accent,
-    onPrimary = LM.OnAccent,
-    secondary = LM.Route,
-    onSecondary = LM.OnAccent,
-    tertiary = LM.Replay,
-    background = LM.Ground,
-    surface = LM.Elevated,
-    surfaceVariant = LM.Raised,
-    onBackground = LM.Ink,
-    onSurface = LM.Ink,
-    onSurfaceVariant = LM.Ink2,
-)
 
 val Inter = FontFamily(
     Font(R.font.inter_regular, FontWeight.Normal),
@@ -58,5 +53,30 @@ private val Type = Typography().let { base ->
 
 @Composable
 fun LocomateTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Dark, typography = Type, content = content)
+    val (appearance, _) = rememberAppearance()
+    val dark = when (appearance.app) {
+        AppAppearance.System -> isSystemInDarkTheme()
+        AppAppearance.Dark -> true
+        AppAppearance.Light -> false
+    }
+    val view = LocalView.current
+    SideEffect {
+        (view.context as? Activity)?.let { activity ->
+            WindowCompat.getInsetsController(activity.window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
+    CompositionLocalProvider(LocalDarkTheme provides dark, LocalAppearance provides appearance) {
+        val colors = if (dark) darkColorScheme(primary = LM.Accent, onPrimary = LM.OnAccent,
+            secondary = LM.Route, onSecondary = LM.OnAccent, tertiary = LM.Replay,
+            background = LM.Ground, surface = LM.Elevated, surfaceVariant = LM.Raised,
+            onBackground = LM.Ink, onSurface = LM.Ink, onSurfaceVariant = LM.Ink2)
+        else lightColorScheme(primary = LM.Accent, onPrimary = LM.OnAccent,
+            secondary = LM.Route, tertiary = LM.Replay, background = LM.Ground,
+            surface = LM.Elevated, surfaceVariant = LM.Raised, onBackground = LM.Ink,
+            onSurface = LM.Ink, onSurfaceVariant = LM.Ink2)
+        MaterialTheme(colorScheme = colors, typography = Type, content = content)
+    }
 }

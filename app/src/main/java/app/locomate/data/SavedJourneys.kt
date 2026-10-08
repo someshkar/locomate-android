@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 
-/** Private, on-device journey summary; no PNR, seat, or precise location. */
+/** Private, on-device journey summary and optional personal coach/seat plan; never uploaded. */
 data class SavedJourney(
     val key: String,
     val trainNumber: String,
@@ -19,7 +19,12 @@ data class SavedJourney(
     val distanceKm: Double,
     val durationMinutes: Int,
     val preview: Boolean,
+    val durationMillis: Long? = null,
+    val personalPlan: JourneyPlan? = null,
 ) {
+    val scheduledDurationMillis: Long? get() = durationMillis?.takeIf { it > 0 }
+        ?: durationMinutes.takeIf { it > 0 }?.toLong()?.times(60_000)
+
     /** The service origin date, not when this record was saved or a claim about travel completion. */
     val originYear: Int? get() = if (preview || originDate?.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) != true) null
         else runCatching { LocalDate.parse(originDate).year }.getOrNull()
@@ -33,13 +38,14 @@ data class SavedJourney(
             val baseKey = if (route.isPreview) "preview:${route.trainNumber}" else "run:${route.trainNumber}:${route.runDate}"
             val distance = if (wholeRun) route.distanceKm else if (board?.distanceKm != null && leave?.distanceKm != null)
                 (leave.distanceKm - board.distanceKm).coerceAtLeast(0.0) else 0.0
-            val duration = if (wholeRun) route.durationMinutes else {
+            val exactDuration = if (wholeRun) route.scheduledDurationMillis else {
                 val departure = board?.scheduledDepartureMillis
                 val arrival = leave?.scheduledArrivalMillis
-                if (departure == null || arrival == null || arrival <= departure) 0
-                else ((arrival - departure) / 60_000)
-                    .takeIf { it in 1L..Int.MAX_VALUE.toLong() }?.toInt() ?: 0
+                if (departure == null || arrival == null || arrival <= departure) null
+                else runCatching { Math.subtractExact(arrival, departure) }.getOrNull()
+                    ?.takeIf { it <= Int.MAX_VALUE.toLong() * 60_000 }
             }
+            val duration = exactDuration?.div(60_000)?.takeIf { it <= Int.MAX_VALUE }?.toInt() ?: 0
             return SavedJourney(
             key = if (wholeRun) baseKey else "$baseKey:${validPlan.boardingCode}:${validPlan.alightingCode}",
             trainNumber = route.trainNumber,
@@ -52,6 +58,8 @@ data class SavedJourney(
             distanceKm = distance,
             durationMinutes = duration,
             preview = route.isPreview,
+            durationMillis = exactDuration,
+            personalPlan = validPlan.takeIf { it.coach.isNotBlank() || it.seat.isNotBlank() },
         )
         }
     }
@@ -70,24 +78,29 @@ data class PassportMetrics(
     val stationCount: Int,
     val knownScheduledHours: Int?,
     val knownScheduledMinutes: Long? = knownScheduledHours?.toLong()?.times(60),
+    val knownScheduledMillis: Long? = null,
 ) {
     val scheduledDurationLabel: String get() {
-        val minutes = knownScheduledMinutes?.takeIf { it > 0 } ?: return "—"
-        val hours = minutes / 60
-        val remainder = minutes % 60
-        return when {
-            hours == 0L -> "${minutes}m"
-            remainder == 0L -> "${hours}h"
-            else -> "${hours}h ${remainder}m"
-        }
+        val seconds = (knownScheduledMillis ?: knownScheduledMinutes?.times(60_000))
+            ?.takeIf { it > 0 }?.div(1_000) ?: return "—"
+        val hours = seconds / 3_600
+        val minutes = seconds / 60 % 60
+        val remainder = seconds % 60
+        return listOf(hours.takeIf { it > 0 }?.let { "${it}h" },
+            minutes.takeIf { it > 0 }?.let { "${it}m" },
+            remainder.takeIf { it > 0 }?.let { "${it}s" }).filterNotNull().joinToString(" ")
+            .ifEmpty { "Less than a second" }
     }
 
     companion object {
         fun from(journeys: List<SavedJourney>): PassportMetrics {
             val runs = journeys.filterNot { it.preview }
             val knownDistance = runs.filter { it.distanceKm > 0 }
-            val knownDuration = runs.filter { it.durationMinutes > 0 }
-            val totalMinutes = knownDuration.takeIf { it.isNotEmpty() }?.sumOf { it.durationMinutes.toLong() }
+            val knownDuration = runs.mapNotNull { it.scheduledDurationMillis }
+            val totalMillis = knownDuration.takeIf { it.isNotEmpty() }?.fold(0L) { total, value ->
+                if (Long.MAX_VALUE - total < value) Long.MAX_VALUE else total + value
+            }
+            val totalMinutes = totalMillis?.div(60_000)
             return PassportMetrics(
                 runCount = runs.size,
                 previewCount = journeys.size - runs.size,
@@ -95,6 +108,7 @@ data class PassportMetrics(
                 stationCount = runs.flatMap { listOf(it.originCode, it.destinationCode) }.distinct().size,
                 knownScheduledHours = totalMinutes?.div(60)?.takeIf { it <= Int.MAX_VALUE }?.toInt(),
                 knownScheduledMinutes = totalMinutes,
+                knownScheduledMillis = totalMillis,
             )
         }
     }
@@ -119,6 +133,12 @@ class SavedJourneyStore(context: Context) {
                 distanceKm = item.optDouble("distanceKm", 0.0),
                 durationMinutes = item.optInt("durationMinutes", 0),
                 preview = item.optBoolean("preview", false),
+                durationMillis = item.optLong("durationMillis").takeIf { it > 0 },
+                personalPlan = item.optJSONObject("personalPlan")?.let { plan ->
+                    JourneyPlan(item.getString("originCode"), item.getString("destinationCode"),
+                        plan.optString("coach"), plan.optString("seat"))
+                        .takeIf { it.validPrivateDetails }
+                },
             )
         }
         if (scoped == null && scope == "preview") parsed.filter(SavedJourney::preview).also(::save)
@@ -139,7 +159,10 @@ class SavedJourneyStore(context: Context) {
                 put("originDate", journey.originDate)
                 put("distanceKm", journey.distanceKm)
                 put("durationMinutes", journey.durationMinutes)
+                put("durationMillis", journey.durationMillis)
                 put("preview", journey.preview)
+                journey.personalPlan?.let { plan -> put("personalPlan", JSONObject()
+                    .put("coach", plan.coach).put("seat", plan.seat)) }
             })
         }
         preferences.edit().putString("journeys_v1", array.toString()).apply()

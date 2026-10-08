@@ -1,5 +1,6 @@
 package app.locomate.ui
 
+import app.locomate.ui.theme.LM
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.os.Handler
@@ -182,6 +183,7 @@ internal class MapGlassController {
 /** Crop the last settled native map in window coordinates; blur only this decorative layer. */
 @Composable
 internal fun MapGlassSurface(modifier: Modifier = Modifier, content: @Composable BoxScope.(Boolean) -> Unit) {
+    val ground = LM.Ground
     val snapshot = LocalMapGlass.current?.snapshot
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val overlaps = snapshot != null && bounds.width > 0 && bounds.height > 0
@@ -190,7 +192,7 @@ internal fun MapGlassSurface(modifier: Modifier = Modifier, content: @Composable
         if (overlaps) {
             val source = requireNotNull(snapshot)
             Canvas(Modifier.matchParentSize().blur(30.dp, BlurredEdgeTreatment.Rectangle)) {
-                drawRect(Color(0xFF060708))
+                drawRect(ground)
                 drawImage(source.image,
                     dstOffset = IntOffset((source.bounds.left - bounds.left).roundToInt(), (source.bounds.top - bounds.top).roundToInt()),
                     dstSize = IntSize(source.bounds.width.roundToInt(), source.bounds.height.roundToInt()))

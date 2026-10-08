@@ -92,7 +92,8 @@ class DockGlassTest {
         val pixels = IntArray(before.width * before.height)
         before.getPixels(pixels, 0, before.width, 0, 0, before.width, before.height)
         assertTrue("Search foreground was blurred or lost", pixels.count {
-            red(it) > 230 && green(it) > 230 && blue(it) > 230
+            (red(it) > 230 && green(it) > 230 && blue(it) > 230) ||
+                (red(it) < 60 && green(it) < 60 && blue(it) < 60)
         } > 10)
         compose.runOnIdle { phase = 0.5f }
         val after = lowerScan(dockImage())
@@ -109,7 +110,7 @@ class DockGlassTest {
                 val bitmap = dockImage()
                 val pixel = bitmap.getPixel(bitmap.width / 2, (bitmap.height * 0.8f).roundToInt())
                 val channels = listOf(red(pixel), green(pixel), blue(pixel))
-                channels[channel] > 120 && channels.filterIndexed { index, _ -> index != channel }.all { it < 55 }
+                channels[channel] > 120 && channels.filterIndexed { index, _ -> index != channel }.all { channels[channel] - it > 100 }
             }
         } catch (failure: Throwable) {
             screenshot("wrong-channel-$channel")

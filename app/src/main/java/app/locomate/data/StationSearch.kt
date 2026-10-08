@@ -10,9 +10,14 @@ data class BetweenStationsResult(val from: StationSearchResult, val to: StationS
 internal fun decodeStation(row: JSONObject): StationSearchResult {
     val code = row.getString("code")
     val name = row.getString("name")
-    require(code.matches(Regex("[A-Z]{1,10}")) && name.isNotBlank()) { "Invalid station catalogue" }
+    require(RailStationCode.isValid(code) && name.isNotBlank()) { "Invalid station catalogue" }
     return StationSearchResult(code, name, row.getString("sourceLabel"),
         row.optString("sourceUpdatedAt").takeIf { it.isNotBlank() && it != "null" })
+}
+
+/** Catalogue codes include one-letter stations and internal hyphen segments such as NRL-DLS. */
+object RailStationCode {
+    fun isValid(code: String) = code.length in 1..10 && code.matches(Regex("[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*"))
 }
 
 object StationSearch {

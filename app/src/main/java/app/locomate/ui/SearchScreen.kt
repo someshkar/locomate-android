@@ -178,7 +178,8 @@ fun SearchScreen(
                     }
                 }
             }
-            item("catalogue") {
+            // The how-to hint earns its space only before anything is typed.
+            if (requestQuery.isEmpty() || !gateway.configured) item("catalogue") {
                 Column {
                     Spacer(Modifier.height(26.dp))
                     Text(if (gateway.configured) "TRAINS" else "HISTORICAL TRAINS", color = LM.Ink3,
@@ -250,6 +251,8 @@ fun SearchScreen(
             if (gateway.configured) itemsIndexed(liveResults, key = { index, train -> "${train.number}:$index" }) { index, train ->
                 SearchResultRow(train.number, train.name, train.originCode, train.destinationCode,
                     train.originName, train.destinationName, train.sourceLabel, train.distanceKm,
+                    departure = train.departure, arrival = train.arrival,
+                    modifier = Modifier.animateItem(),
                     showSeparator = index < liveResults.lastIndex,
                     enabled = !searching && runCatching { LocalDate.parse(date) }.isSuccess,
                     onSelect = { if (query.trim() == requestQuery) { rememberTrain(train); onSelectLive(train, date) } })
@@ -279,8 +282,8 @@ fun SearchScreen(
                                 focus.clearFocus(); query = station.code
                                 selectedStationCode = station.code; selectedStationName = station.name
                             }, shape = RoundedCornerShape(20.dp), modifier = Modifier
-                                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
-                                .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                                .background(LM.Ink.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                                .border(1.dp, LM.Ink.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                                 .semantics { contentDescription = "Find trains at ${station.name}, ${station.code}" }) {
                                 Text(buildAnnotatedString {
                                     withStyle(SpanStyle(color = LM.Accent, fontFamily = PlexMono, fontWeight = FontWeight.SemiBold)) { append(station.code) }

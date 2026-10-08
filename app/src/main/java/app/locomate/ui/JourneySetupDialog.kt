@@ -12,11 +12,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,10 +57,14 @@ fun JourneySetupDialog(route: RoutePreview, current: JourneyPlan, onDismiss: () 
     var leave by remember(route.runId, route.trainNumber) {
         mutableIntStateOf(calls.indexOfFirst { it.code == current.alightingCode }.coerceAtLeast(1))
     }
+    var coach by remember(route.runId, route.trainNumber) { mutableStateOf(current.coach) }
+    var seat by remember(route.runId, route.trainNumber) { mutableStateOf(current.seat) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     var choosing by remember { mutableIntStateOf(0) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(color = Color(0xFF191B21), shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.11f)),
+        Surface(color = LM.Elevated, shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, LM.Ink.copy(alpha = 0.11f)),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).heightIn(max = 700.dp)
                 .semantics { paneTitle = "Choose boarding and alighting stops" }) {
             Column(Modifier.padding(20.dp)) {
@@ -63,18 +73,21 @@ fun JourneySetupDialog(route: RoutePreview, current: JourneyPlan, onDismiss: () 
                 Spacer(Modifier.height(5.dp))
                 Text("Choose where you board and leave this train. Stored on this device.",
                     color = LM.Ink2, fontSize = 13.sp, lineHeight = 19.sp)
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(12.dp))
                 Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     ChoiceTab("BOARD", calls[board].code, choosing == 0, Modifier.weight(1f)) { choosing = 0 }
                     ChoiceTab("LEAVE", calls[leave].code, choosing == 1, Modifier.weight(1f)) { choosing = 1 }
                 }
                 Spacer(Modifier.height(12.dp))
-                LazyColumn(Modifier.weight(1f).selectableGroup()) {
+                TextButton(onClick = { scope.launch { listState.animateScrollToItem(calls.size) } }) {
+                    Text("Edit private coach / seat")
+                }
+                LazyColumn(Modifier.weight(1f).selectableGroup(), state = listState) {
                     itemsIndexed(calls) { index, stop ->
                         val eligible = if (choosing == 0) index < calls.lastIndex else index > board
                         if (eligible) {
                             val selected = if (choosing == 0) index == board else index == leave
-                            Surface(color = if (selected) Color(0xFF19364B) else Color.Transparent,
+                            Surface(color = if (selected) LM.Raised else Color.Transparent,
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                                     .selectable(selected = selected, role = Role.RadioButton, onClick = {
@@ -97,12 +110,22 @@ fun JourneySetupDialog(route: RoutePreview, current: JourneyPlan, onDismiss: () 
                             }
                         }
                     }
+                    item(key = "private-details") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(coach, onValueChange = { if (it.length <= 16 && it.all { c -> c.isLetterOrDigit() || c in " -" }) coach = it },
+                        label = { Text("Private coach") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(seat, onValueChange = { if (it.length <= 24 && it.all { c -> c.isLetterOrDigit() || c in " /-" }) seat = it },
+                        label = { Text("Private seat") }, singleLine = true, modifier = Modifier.weight(1f))
+                }
+                Text("Optional. Stays on this device; excluded from community reports and Passport.", color = LM.Ink2, fontSize = 12.sp)
+                Spacer(Modifier.height(12.dp))
+                    }
                 }
                 Spacer(Modifier.height(13.dp))
-                Button(onClick = { onSave(JourneyPlan(calls[board].code, calls[leave].code)) },
+                Button(onClick = { onSave(JourneyPlan(calls[board].code, calls[leave].code, coach.trim(), seat.trim())) },
                     colors = ButtonDefaults.buttonColors(containerColor = LM.Accent),
                     shape = RoundedCornerShape(17.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("Save this segment", color = Color.Black, fontWeight = FontWeight.Bold,
+                    Text("Save this segment", color = LM.OnAccent, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(vertical = 5.dp))
                 }
             }
@@ -113,7 +136,7 @@ fun JourneySetupDialog(route: RoutePreview, current: JourneyPlan, onDismiss: () 
 @Composable
 private fun ChoiceTab(label: String, code: String, selected: Boolean, modifier: Modifier,
                       onClick: () -> Unit) {
-    Surface(color = if (selected) Color(0xFF19364B) else Color(0xFF24262D),
+    Surface(color = if (selected) LM.Raised else LM.Raised,
         shape = RoundedCornerShape(14.dp), modifier = modifier.selectable(
             selected = selected, role = Role.Tab, onClick = onClick)) {
         Column(Modifier.padding(12.dp)) {

@@ -26,7 +26,7 @@ object RailClockSequence {
                 lastMinute = local.hour * 60 + local.minute
                 return instant.toEpochMilli()
             }
-            val clock = runCatching { LocalTime.parse(value.take(5)) }.getOrNull() ?: return null
+            val clock = runCatching { LocalTime.parse(value) }.getOrNull() ?: return null
             val minute = clock.hour * 60 + clock.minute
             if (lastMinute != null && minute < lastMinute!!) day = day.plusDays(1)
             lastMinute = minute

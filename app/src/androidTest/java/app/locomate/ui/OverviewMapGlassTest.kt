@@ -25,12 +25,16 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.locomate.data.NetworkBounds
 import app.locomate.data.PreviewRoutes
 import app.locomate.data.RailGateway
 import app.locomate.data.SavedJourney
+import app.locomate.data.AppearanceStore
+import app.locomate.data.AppAppearance
+import app.locomate.data.MapLighting
 import app.locomate.ui.theme.LocomateTheme
 import org.junit.Assert.*
 import org.junit.Before
@@ -101,6 +105,10 @@ class OverviewMapGlassTest {
     }
 
     @Test fun actualOverviewPagesReplaceGlassAndSearchKeyboardRetainsItsNativeCamera() {
+        val appearanceStore = AppearanceStore(compose.activity)
+        val originalAppearance = appearanceStore.load()
+        try {
+        appearanceStore.save(originalAppearance.copy(app = AppAppearance.Light, lighting = MapLighting.Night))
         val route = PreviewRoutes.load(compose.activity).first()
         val saved = SavedJourney.from(route.copy(isPreview = false, runDate = "2026-10-01"))
         val gateway = RailGateway(compose.activity, "")
@@ -166,6 +174,8 @@ class OverviewMapGlassTest {
             throw AssertionError("IME height ${keyboardHeight()}, native map height ${searchView.height}, glass present ${glass.snapshot != null}", failure)
         }
         assertSame(searchView, findMap(compose.activity.window.decorView))
+        compose.runOnIdle { assertTrue("Hidden Night map must use dark icons over the Light Search background",
+            WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView).isAppearanceLightStatusBars) }
         field.performImeAction()
         compose.waitUntil(15_000) { keyboardHeight() == 0 && glass.snapshot != null && searchView.height > 0 }
         compose.runOnUiThread {
@@ -173,7 +183,10 @@ class OverviewMapGlassTest {
             assertEquals(26.0, requireNotNull(map.cameraPosition.target).latitude, 0.00002)
             assertEquals(80.0, requireNotNull(map.cameraPosition.target).longitude, 0.00002)
             assertEquals(5.75, map.cameraPosition.zoom, 0.00002)
+            assertFalse("Exposed Night map needs light status icons",
+                WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView).isAppearanceLightStatusBars)
         }
+        } finally { appearanceStore.save(originalAppearance) }
     }
 
     private fun assertBounds(map: MapLibreMap, viewport: Rect, bounds: NetworkBounds) {

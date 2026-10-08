@@ -5,6 +5,8 @@ import android.graphics.Rect
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
+import androidx.core.view.WindowCompat
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,6 +23,9 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.locomate.data.PreviewRoutes
+import app.locomate.data.AppearanceStore
+import app.locomate.data.AppAppearance
+import app.locomate.data.MapLighting
 import app.locomate.data.RailGeometry
 import app.locomate.data.RailPoint
 import app.locomate.ui.theme.LocomateTheme
@@ -181,6 +186,54 @@ class JourneyMapControlsTest {
         // Hidden/expired evidence removes the marker focus action.
         compose.runOnIdle { route = route.copy(positionProgress = null, positionStatus = null) }
         compose.onNodeWithContentDescription("Train position unavailable").assertIsNotEnabled()
+    }
+
+    @Test fun appearanceAndLightingChangesPreserveNativeMapCameraAndGeometry() {
+        val store = AppearanceStore(compose.activity)
+        val original = store.load()
+        val route = PreviewRoutes.load(compose.activity).first()
+        var showMap by mutableStateOf(true)
+        try {
+            store.save(original.copy(app = AppAppearance.Light, lighting = MapLighting.Night))
+            compose.setContent { LocomateTheme {
+                if (showMap) JourneyScreen(route, saved = false, onSave = {}) else Text("App content")
+            } }
+            compose.waitUntil(15_000) {
+                !compose.onNodeWithContentDescription("Fit journey route").fetchSemanticsNode().config.contains(SemanticsProperties.Disabled)
+            }
+            val view = requireNotNull(findMap(compose.activity.window.decorView))
+            var map: MapLibreMap? = null
+            compose.runOnUiThread { view.getMapAsync { map = it } }
+            val nativeMap = requireNotNull(map)
+            compose.runOnIdle { assertFalse("Night map needs light status icons even in the Light app",
+                WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView).isAppearanceLightStatusBars) }
+            compose.runOnUiThread { nativeMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(22.0, 76.0), 7.0)) }
+            store.save(original.copy(app = AppAppearance.Light, lighting = MapLighting.Day, rotation = false))
+            compose.waitUntil(20_000) {
+                var ready = false
+                compose.runOnUiThread { ready = nativeMap.style?.uri == app.locomate.BuildConfig.MAP_DAY_STYLE_URL && nativeMap.style?.isFullyLoaded == true }
+                ready
+            }
+            assertSame(view, findMap(compose.activity.window.decorView))
+            compose.runOnUiThread {
+                assertEquals(22.0, nativeMap.cameraPosition.target!!.latitude, 0.001)
+                assertEquals(7.0, nativeMap.cameraPosition.zoom, 0.001)
+                assertFalse(nativeMap.uiSettings.isRotateGesturesEnabled)
+                assertEquals(route.geometry.size, nativeMap.polylines.single().points.size)
+                assertTrue(WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView).isAppearanceLightStatusBars)
+            }
+            screenshot("light-day-preserved-camera", view, nativeMap)
+            store.save(original.copy(app = AppAppearance.Light, lighting = MapLighting.Night))
+            compose.waitUntil(20_000) {
+                var ready = false
+                compose.runOnUiThread { ready = nativeMap.style?.uri == app.locomate.BuildConfig.MAP_STYLE_URL && nativeMap.style?.isFullyLoaded == true }
+                ready
+            }
+            compose.runOnIdle { showMap = false }
+            compose.waitForIdle()
+            compose.runOnIdle { assertTrue("App surface must restore dark status icons after the map leaves",
+                WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView).isAppearanceLightStatusBars) }
+        } finally { store.save(original) }
     }
 
     private fun findMap(view: View): MapView? {

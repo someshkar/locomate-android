@@ -98,8 +98,8 @@ data class JourneyAlertSubscription(
             if (route.isPreview || route.statusLabel.startsWith("STALE") ||
                 route.runId?.let(JourneyAlertLink::fromRunId) == null) return null
             val departure = route.departureInstantMillis ?: return null
-            val arrival = route.arrivalInstantMillis ?: route.durationMinutes.takeIf { it > 0 }
-                ?.let { departure + it * 60_000L } ?: return null
+            val arrival = route.arrivalInstantMillis ?: route.scheduledDurationMillis
+                ?.let { departure + it } ?: return null
             if (arrival <= departure) return null
             return minOf(arrival + 24 * 3_600_000L, now + 5 * 24 * 3_600_000L).takeIf { it > now }
         }

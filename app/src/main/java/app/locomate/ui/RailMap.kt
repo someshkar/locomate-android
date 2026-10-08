@@ -1,5 +1,6 @@
 package app.locomate.ui
 
+import app.locomate.ui.theme.LM
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -8,8 +9,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import app.locomate.data.MapLighting
+import app.locomate.data.MapImagery
+import app.locomate.data.MapDaylight
+import app.locomate.data.RailPoint
+import app.locomate.ui.theme.LocalAppearance
+import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.delay
+import java.time.Instant
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -22,11 +33,15 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.view.doOnLayout
+import androidx.core.view.WindowCompat
+import app.locomate.ui.theme.LocalDarkTheme
+import android.app.Activity
 import app.locomate.BuildConfig
 import app.locomate.data.RoutePreview
 import app.locomate.data.NetworkBounds
@@ -71,12 +86,25 @@ fun RailMap(
         initializeMap = true
     }
     if (!initializeMap) {
-        Box(modifier.fillMaxSize().background(Color(0xFF060708)))
+        Box(modifier.fillMaxSize().background(LM.Ground))
         return
     }
 
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val appearance = LocalAppearance.current
+    val ground = LM.Ground.toArgb()
+    var mapCenter by remember(route?.trainNumber, route?.runDate) { mutableStateOf(RailPoint(23.7, 76.0)) }
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { delay(60_000); now = System.currentTimeMillis() } }
+    val isDay = when (appearance.lighting) {
+        MapLighting.Day -> true
+        MapLighting.Night -> false
+        MapLighting.Auto -> MapDaylight.isDay(Instant.ofEpochMilli(now), mapCenter.latitude, mapCenter.longitude)
+    }
+    val styleUrl = if (appearance.imagery == MapImagery.Satellite && BuildConfig.MAP_SATELLITE_STYLE_URL.isNotBlank())
+        BuildConfig.MAP_SATELLITE_STYLE_URL else if (isDay) BuildConfig.MAP_DAY_STYLE_URL else BuildConfig.MAP_STYLE_URL
+    val currentRotation = rememberUpdatedState(appearance.rotation)
     val mapGlass = LocalMapGlass.current
     val currentBoundsCallback = rememberUpdatedState(onVisibleBounds)
     val currentViewport = rememberUpdatedState(visibleViewport)
@@ -90,10 +118,25 @@ fun RailMap(
     val previewIcon = remember(context) { markerIcon(context, 0xFFBCA7FF.toInt()) }
     val clusterIcons = remember(context) { mutableMapOf<Int, org.maplibre.android.annotations.Icon>() }
     var styleReady by remember(route?.trainNumber, route?.runDate) { mutableStateOf(false) }
+    val hostView = LocalView.current
+    val appLightIcons = rememberUpdatedState(!LocalDarkTheme.current)
+    SideEffect {
+        (hostView.context as? Activity)?.let { activity ->
+            WindowCompat.getInsetsController(activity.window, hostView).isAppearanceLightStatusBars =
+                if (styleReady && (visibleViewport == null || visibleViewport.height > 0f))
+                    isDay && appearance.imagery != MapImagery.Satellite else appLightIcons.value
+        }
+    }
+    DisposableEffect(hostView) {
+        onDispose { (hostView.context as? Activity)?.let { activity ->
+            WindowCompat.getInsetsController(activity.window, hostView).isAppearanceLightStatusBars = appLightIcons.value
+        } }
+    }
     val markerRefs = remember(route?.trainNumber, route?.runDate) { mutableListOf<Marker>() }
     val markerSync = remember(route?.trainNumber, route?.runDate) { MarkerSync() }
     val markerSelections = remember(route?.trainNumber, route?.runDate) { mutableMapOf<Long, List<NetworkTrain>>() }
     val mapActive = remember(route?.trainNumber, route?.runDate) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    val styleEpoch = remember(route?.trainNumber, route?.runDate) { java.util.concurrent.atomic.AtomicInteger(0) }
     val routeOverlay = remember(route?.trainNumber, route?.runDate) { RouteOverlaySync() }
     val viewportSync = remember(route?.trainNumber, route?.runDate) { MapViewportSync() }
     val mapView = remember(route?.trainNumber, route?.runDate) {
@@ -115,7 +158,7 @@ fun RailMap(
                 info.setBoundsInScreen(bounds)
             }
         }.apply {
-            setBackgroundColor(android.graphics.Color.rgb(6, 7, 8))
+            setBackgroundColor(ground)
             onCreate(null)
             getMapAsync { map ->
                 fun publishBounds() {
@@ -135,6 +178,9 @@ fun RailMap(
                     false // Close the native info window after its explicit action.
                 }
                 map.addOnCameraIdleListener {
+                    map.cameraPosition.target?.let { target ->
+                        mapCenter = RailPoint(target.latitude.coerceIn(-90.0, 90.0), target.longitude.coerceIn(-180.0, 180.0))
+                    }
                     publishBounds()
                     if (map.style != null && markerSync.needsUpdate(
                             currentRoute.value, currentNetworkTrains.value, map.cameraPosition.zoom)) {
@@ -143,7 +189,8 @@ fun RailMap(
                             currentTrainSelection.value != null, currentClusterSelection.value != null)
                     }
                 }
-                map.uiSettings.isCompassEnabled = false
+                map.uiSettings.isCompassEnabled = true
+                map.uiSettings.isRotateGesturesEnabled = currentRotation.value
                 map.uiSettings.isAttributionEnabled = attribution == null
                 val points = route?.geometry.orEmpty()
                 val center = if (points.isEmpty()) LatLng(23.7, 76.0) else {
@@ -161,22 +208,41 @@ fun RailMap(
                     viewportSync.update(this@apply, map, currentViewport.value)
                     publishBounds()
                 }
-                map.setStyle(BuildConfig.MAP_STYLE_URL) {
-                    if (!mapActive.get()) return@setStyle
-                    styleReady = true
-                    attribution?.attach(this@apply, map)
-                    routeOverlay.update(map, currentRoute.value)
-                    journeyCamera?.attach(this@apply, map)
-                    if (markerSync.needsUpdate(currentRoute.value, currentNetworkTrains.value,
-                            map.cameraPosition.zoom)) {
-                        syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
-                            observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context, markerSelections,
-                            currentTrainSelection.value != null, currentClusterSelection.value != null)
+
+            }
+        }
+    }
+
+    LaunchedEffect(mapView, styleUrl) {
+        val epoch = styleEpoch.incrementAndGet()
+        mapView.getMapAsync { map ->
+            if (!mapActive.get()) return@getMapAsync
+            mapGlass?.detach(mapView)
+            map.setStyle(styleUrl) {
+                if (!mapActive.get() || styleEpoch.get() != epoch) return@setStyle
+                routeOverlay.invalidate()
+                markerSync.invalidate()
+                routeOverlay.update(map, currentRoute.value)
+                syncMarkers(map, currentRoute.value, currentNetworkTrains.value,
+                    observedIcon, estimatedIcon, previewIcon, markerRefs, clusterIcons, context, markerSelections,
+                    currentTrainSelection.value != null, currentClusterSelection.value != null)
+                attribution?.attach(mapView, map)
+                journeyCamera?.attach(mapView, map)
+                // setStyle preserves the mounted map camera. Never restore an old snapshot:
+                // the traveller may have panned or used a camera action during the download.
+                styleReady = true
+                mapView.post {
+                    if (mapActive.get() && styleEpoch.get() == epoch) {
+                        mapGlass?.attach(mapView, map, lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+                        visibleMapBounds(mapView, map, currentViewport.value)?.let { currentBoundsCallback.value?.invoke(it) }
                     }
-                    this@apply.post { publishBounds() }
-                    mapGlass?.attach(this@apply, map, lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                 }
             }
+        }
+    }
+    LaunchedEffect(mapView, appearance.rotation) {
+        mapView.getMapAsync { map ->
+            if (mapActive.get()) map.uiSettings.isRotateGesturesEnabled = currentRotation.value
         }
     }
 
@@ -218,7 +284,7 @@ fun RailMap(
     }
 
     key(route?.trainNumber, route?.runDate) {
-        Box(modifier.fillMaxSize().background(Color(0xFF060708))) {
+        Box(modifier.fillMaxSize().background(LM.Ground)) {
             AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize().alpha(if (styleReady) 1f else 0f),
                 update = { view ->
                     val routeSnapshot = currentRoute.value
@@ -254,6 +320,8 @@ private class RouteOverlaySync {
     private var geometry: List<app.locomate.data.RailPoint>? = null
     private var line: Polyline? = null
 
+    fun invalidate() { geometry = null }
+
     fun update(map: MapLibreMap, route: RoutePreview?) {
         val points = route?.geometry.orEmpty()
         if (points == geometry) return
@@ -270,6 +338,8 @@ private class MarkerSync {
     private var route: RoutePreview? = null
     private var trains: List<NetworkTrain>? = null
     private var zoom = Double.NaN
+
+    fun invalidate() { route = null; trains = null; zoom = Double.NaN }
 
     fun needsUpdate(nextRoute: RoutePreview?, nextTrains: List<NetworkTrain>, nextZoom: Double): Boolean {
         if (route === nextRoute && trains == nextTrains && abs(zoom - nextZoom) < 0.05) return false
