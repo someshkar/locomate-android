@@ -10,6 +10,7 @@ import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import kotlin.math.roundToInt
 
 /** Opt-in real native transport smoke. Writes are limited to an explicitly named loopback fixture. */
 class ConfiguredGatewaySmokeTest {
@@ -53,6 +54,17 @@ class ConfiguredGatewaySmokeTest {
                 val stale = runCatching { gateway.registerAndroidStatus(run, "local-smoke-fid-no-delivery-123456789", revision) }.exceptionOrNull()
                 assertEquals(409, (stale as? GatewayError)?.status)
                 val now = System.currentTimeMillis()
+                gateway.recordCommunityConsent(CommunityConsent.evidence(true))
+                val point = route.geometry.first()
+                val observations = listOf(now - 2_000, now - 1_000).map { timestamp -> CommunityObservation(
+                    "12137:$date", timestamp, (point.latitude * 100_000).roundToInt(),
+                    (point.longitude * 100_000).roundToInt(), 80.0, 30.0, 0.0, 0.0) }
+                val (positionBatch, positionKey) = CommunityBatch.encode(observations)
+                assertEquals("run:12137:$date", positionBatch.getJSONArray("observations").getJSONArray(0).getString(1))
+                assertTrue(observations.all { it.runId == "12137:$date" })
+                val acknowledged = gateway.uploadObservations(positionBatch, positionKey)
+                assertEquals(observations.map { it.localId }.toSet(), acknowledged)
+                assertEquals(acknowledged, gateway.uploadObservations(positionBatch, positionKey))
                 val queue = PhysicalReportQueue(context, url)
                 val report = queue.stage("12345", date, PhysicalSightingBatch(
                     listOf(PhysicalSighting(SightingKind.Coach, "123456", now, "AAA")), now), gateway.reportInstallationGeneration())
@@ -64,6 +76,9 @@ class ConfiguredGatewaySmokeTest {
                 val pending = queue.stage("12345", date, PhysicalSightingBatch(
                     listOf(PhysicalSighting(SightingKind.Locomotive, "30201", now, "AAA")), now), report.installation)
                 gateway.recordCommunityConsent(CommunityConsent.evidence(false))
+                val (withdrawnBatch, withdrawnKey) = CommunityBatch.encode(listOf(observations.first().copy(timestamp = now - 500)))
+                val withdrawnPosition = runCatching { gateway.uploadObservations(withdrawnBatch, withdrawnKey) }.exceptionOrNull()
+                assertEquals(403, (withdrawnPosition as? GatewayError)?.status)
                 val rejected = runCatching { gateway.submitQueuedPhysicalReport(pending) }.exceptionOrNull()
                 assertEquals(403, (rejected as? GatewayError)?.status)
                 queue.clear()

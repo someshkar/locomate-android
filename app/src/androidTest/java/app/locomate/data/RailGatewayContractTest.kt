@@ -16,6 +16,31 @@ import java.net.SocketException
 
 /** Real HTTP regressions for native response identity and cache replacement. */
 class RailGatewayContractTest {
+    @Test fun partialObservationAckRemovesOnlyAcknowledgedLegacyQueueIds() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        AuditGateway().use { server ->
+            val gateway = RailGateway(context, server.url)
+            val queue = CommunityQueue(context, server.url)
+            val preferences = CommunityPreferences(context, server.url)
+            val now = System.currentTimeMillis()
+            val first = CommunityObservation("12345:2026-10-08", now - 2_000, 1_900_000, 7_200_000, 80.0, 30.0, 0.0, 0.0)
+            val second = first.copy(timestamp = now - 1_000)
+            try {
+                preferences.grant(); queue.append(first); queue.append(second)
+                server.responseBody = """{"acceptedRecordIds":[${first.localId}]}"""
+                assertEquals(1, CommunitySync(queue, gateway, preferences).flushObservations())
+                assertEquals(listOf(second), queue.pendingObservations())
+                val sent = JSONObject(server.lastBody).getJSONArray("observations")
+                assertEquals("run:12345:2026-10-08", sent.getJSONArray(0).getString(1))
+                assertEquals(first.localId, sent.getJSONArray(0).getLong(0))
+                assertEquals("12345:2026-10-08", second.runId)
+            } finally {
+                queue.clearObservations(); preferences.revoke()
+                File(context.filesDir, "community/${railStorageScope(server.url)}").deleteRecursively()
+                context.deleteSharedPreferences("locomate.community.${railStorageScope(server.url)}")
+            }
+        }
+    }
     @Test fun stationCatalogueKeepsValidHyphenatedAndOneLetterCodes() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         AuditGateway().use { server ->
