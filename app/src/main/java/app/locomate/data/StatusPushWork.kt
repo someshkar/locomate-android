@@ -14,6 +14,7 @@ import app.locomate.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 
 /** FCM registration is shared by the explicitly enabled status card and journey alerts. */
 object StatusPushWork {
@@ -23,6 +24,7 @@ object StatusPushWork {
     private const val KEY_DELETING = "deletingInstallation"
     private const val KEY_ACTION = "action"
     private const val KEY_RUN_ID = "runId"
+    private const val KEY_REVISION = "revision"
     private const val ACTION_SYNC = "sync"
     private const val ACTION_UNREGISTER = "unregister"
     private const val ACTION_EXPIRE = "expire"
@@ -37,9 +39,14 @@ object StatusPushWork {
 
     fun enable(context: Context) {
         if (!available(context) || deleting(context)) return
-        val active = JourneyStatusNotification(context).activeRun() ?: return
-        preferences(context).edit()
-            .putString(KEY_ACTIVE_RUN_ID, active.runId).apply()
+        val staged = JourneyStatusNotification(context).withActiveRun { active ->
+            if (active == null) false else {
+                StatusSubscriptionStore(context).stage(active.runId, true, target(context))
+                check(preferences(context).edit().putString(KEY_ACTIVE_RUN_ID, active.runId).commit())
+                true
+            }
+        }
+        if (!staged) return
         refreshRegistration(context)
         scheduleExpiryCheck(context)
     }
@@ -61,6 +68,9 @@ object StatusPushWork {
         if (target.length !in 20..4096 || target.any { it.code !in 0x21..0x7e }) return
         if (!hasConsumers(context)) return
         if (!preferences(context).edit().putString(KEY_TARGET, target).commit()) return
+        JourneyStatusNotification(context).withActiveRun { active ->
+            if (active != null) StatusSubscriptionStore(context).stage(active.runId, true, target)
+        }
         enqueue(context, ACTION_SYNC, null)
         JourneyAlertsWork.enqueue(context)
     }
@@ -71,7 +81,8 @@ object StatusPushWork {
         if (preferences.getString(KEY_ACTIVE_RUN_ID, null) == runId) {
             preferences.edit().remove(KEY_ACTIVE_RUN_ID).apply()
         }
-        enqueue(context, ACTION_UNREGISTER, runId)
+        val mutation = StatusSubscriptionStore(context).stage(runId, false)
+        enqueue(context, ACTION_UNREGISTER, runId, mutation.revision)
         releaseIfUnused(context)
     }
 
@@ -110,10 +121,11 @@ object StatusPushWork {
         return PrivacyDeletionState.finish(context)
     }
 
-    private fun enqueue(context: Context, action: String, runId: String?) {
+    private fun enqueue(context: Context, action: String, runId: String?, revision: Long? = null) {
         if (!available(context) || deleting(context)) return
         val input = Data.Builder().putString(KEY_ACTION, action).apply {
             if (runId != null) putString(KEY_RUN_ID, runId)
+            if (revision != null) putLong(KEY_REVISION, revision)
         }.build()
         val request = OneTimeWorkRequestBuilder<StatusPushWorker>()
             .setInputData(input)
@@ -137,7 +149,9 @@ object StatusPushWork {
                             ?: return Result.success()
                         val target = preferences(applicationContext)
                             .getString(KEY_TARGET, null) ?: return Result.success()
-                        gateway.registerAndroidStatus(active.runId, target)
+                        val mutation = StatusSubscriptionStore(applicationContext).load(active.runId)
+                            ?.takeIf { it.enabled && it.target == target } ?: return Result.success()
+                        gateway.registerAndroidStatus(active.runId, target, mutation.revision)
                     }
                     ACTION_UNREGISTER -> {
                         if (!gateway.configured) return Result.success()
@@ -145,7 +159,9 @@ object StatusPushWork {
                         if (JourneyStatusNotification(applicationContext).activeRun()?.runId == runId) {
                             return Result.success()
                         }
-                        gateway.unregisterAndroidStatus(runId)
+                        val revision = inputData.getLong(KEY_REVISION, 0)
+                        if (revision <= 0) return Result.success()
+                        gateway.unregisterAndroidStatus(runId, revision)
                     }
                     ACTION_EXPIRE -> {
                         if (JourneyStatusNotification(applicationContext).activeRun() != null) {
@@ -158,8 +174,23 @@ object StatusPushWork {
                     else -> return Result.failure()
                 }
                 Result.success()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: GatewayError) {
-                if (error.status == 503 || error.status in 400..499) Result.success()
+                if (error.status == 409 && error.currentRevision != null) {
+                    val store = StatusSubscriptionStore(applicationContext)
+                    val runId = inputData.getString(KEY_RUN_ID)
+                        ?: JourneyStatusNotification(applicationContext).activeRun()?.runId
+                    if (runId != null) {
+                        val mutation = store.load(runId)
+                        if (mutation != null && !deleting(applicationContext)) {
+                            val next = store.stage(runId, mutation.enabled, mutation.target, error.currentRevision)
+                            enqueue(applicationContext, if (next.enabled) ACTION_SYNC else ACTION_UNREGISTER,
+                                if (next.enabled) null else runId, if (next.enabled) null else next.revision)
+                        }
+                    }
+                    Result.success()
+                } else if (error.status == 503 || error.status in 400..499) Result.success()
                 else if (runAttemptCount < 4) Result.retry() else Result.failure()
             } catch (_: Exception) {
                 if (runAttemptCount < 4) Result.retry() else Result.failure()

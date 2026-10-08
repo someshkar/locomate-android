@@ -84,6 +84,16 @@
       },
       "accepted": true,
       "reason": "forecast enrichment with observed, baseline and midnight quantiles"
+    },
+    {
+      "file": "journey-scheduled-outage.json",
+      "sha256": "0e2cd58db93069ae1dda1164dba6038130615d6f769decb2bed8fa267e563ef7",
+      "request": {
+        "trainNumber": "12345",
+        "originDate": "2026-08-24"
+      },
+      "accepted": true,
+      "reason": "published timetable during live outage; no location, delay, actual event or arrival forecast evidence"
     }
   ]
 }

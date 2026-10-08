@@ -110,19 +110,21 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
     }
 
     /** The FCM target is a Firebase Installation ID from the native SDK. */
-    suspend fun registerAndroidStatus(runId: String, fcmTarget: String) {
+    suspend fun registerAndroidStatus(runId: String, fcmTarget: String, revision: Long) {
         require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
         require(fcmTarget.length in 20..4096 && fcmTarget.all { it.code in 0x21..0x7e }) {
             "Invalid FCM target"
         }
+        require(revision in 1..9_007_199_254_740_991L)
         val response = authenticatedRequest("/v1/android-status/subscription", "POST",
-            JSONObject().put("runId", runId).put("fcmTarget", fcmTarget))
-        if (!response.optBoolean("stored", false)) throw GatewayError("Status delivery was not accepted.")
+            JSONObject().put("runId", runId).put("fcmTarget", fcmTarget).put("revision", revision))
+        if (!response.optBoolean("stored", false) || response.optString("runId") != runId || response.optLong("revision") != revision) throw GatewayError("Status delivery was not accepted.")
     }
 
-    suspend fun unregisterAndroidStatus(runId: String) {
+    suspend fun unregisterAndroidStatus(runId: String, revision: Long) {
         require(Regex("^[0-9]{4,6}:[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(runId)) { "Invalid run ID" }
-        authenticatedRequest("/v1/android-status/subscription/$runId", "DELETE", null)
+        require(revision in 1..9_007_199_254_740_991L)
+        authenticatedRequest("/v1/android-status/subscription/$runId?revision=$revision", "DELETE", null)
     }
 
     suspend fun registerJourneyAlerts(subscription: JourneyAlertSubscription): JourneyAlertAcknowledgement {
@@ -254,17 +256,58 @@ class RailGateway(context: Context, baseUrl: String = BuildConfig.RAIL_API_URL) 
         return TrainReliabilitySummary.decode(payload, number)
     }
 
-    suspend fun journey(number: String, originDate: String): RoutePreview {
+    suspend fun operationalChain(number: String, date: String): OperationalChain =
+        datedRead(number, date, "rake-working") { OperationalChain.decode(it, number, date) }
+
+    suspend fun physicalChain(number: String, date: String): PhysicalChain =
+        datedRead(number, date, "physical-chain") { PhysicalChain.decode(it, number, date) }
+
+    suspend fun submitPhysicalSightings(number: String, date: String,
+                                       batch: PhysicalSightingBatch): SightingAcknowledgement {
+        validateDatedRequest(number, date)
+        val now = System.currentTimeMillis()
+        require(batch.consentedAt in (now - 15 * 60_000)..(now + 60_000)) { "Please confirm the report notice again" }
+        val generation = requestGeneration()
+        val (body, key) = batch.encode()
+        val response = authenticatedRequest("/v1/runs/$number/$date/physical-sightings", "POST", body, key)
+        checkGeneration(generation)
+        val ids = response.getJSONArray("acceptedIds")
+        require(ids.length() == batch.sightings.size)
+        val evidence = response.getJSONObject("evidenceState")
+        val states = setOf("proposed", "partial", "confirmed", "conflicting")
+        val locomotive = evidence.getString("locomotive").also { require(it in states) }
+        val rake = evidence.getString("rake").also { require(it in states) }
+        return SightingAcknowledgement((0 until ids.length()).map { ids.getString(it).also { id -> require(id.isNotBlank()) } },
+            locomotive, rake, response.getString("message"))
+    }
+
+    private suspend fun <T> datedRead(number: String, date: String, suffix: String,
+                                     decode: (JSONObject) -> T): T {
+        validateDatedRequest(number, date)
+        val generation = requestGeneration()
+        val payload = get("/v1/runs/$number/$date/$suffix")
+        checkGeneration(generation)
+        val result = decode(payload)
+        checkGeneration(generation)
+        return result
+    }
+
+    private fun validateDatedRequest(number: String, date: String) {
         require(Regex("^[0-9]{4,6}$").matches(number)) { "Invalid train number" }
-        LocalDate.parse(originDate)
-        require(LocalDate.parse(originDate).toString() == originDate) { "Invalid origin date" }
-        val generation = PrivacyDeletionState.withDataAccess(appContext) {
-            requireRequestAllowed(false)
-            installationId.also {
-                if (currentInstallationId() != it)
-                    throw GatewayError("Installation changed while loading this train.", code = "installation_changed")
-            }
+        require(LocalDate.parse(date).toString() == date) { "Invalid origin date" }
+    }
+
+    private fun requestGeneration(): String = PrivacyDeletionState.withDataAccess(appContext) {
+        requireRequestAllowed(false)
+        installationId.also {
+            if (currentInstallationId() != it)
+                throw GatewayError("Installation changed while loading this train.", code = "installation_changed")
         }
+    }
+
+    suspend fun journey(number: String, originDate: String): RoutePreview {
+        validateDatedRequest(number, originDate)
+        val generation = requestGeneration()
         try {
             val payload = get("/v1/runs/$number/$originDate")
             checkGeneration(generation)

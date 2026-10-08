@@ -31,6 +31,9 @@ class JourneyStatusNotification(
 
     fun activeRun(): ActiveRun? = synchronized(lock) { activeRunLocked() }
 
+    /** Stage push intent while holding the same lock as cancel/enable, so a late callback cannot re-enable it. */
+    internal fun <T> withActiveRun(block: (ActiveRun?) -> T): T = synchronized(lock) { block(activeRunLocked()) }
+
     /** Invalidates UI only. Read activeRun later, after the posting transaction releases its lock. */
     fun observe(changed: () -> Unit): () -> Unit {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> changed() }
