@@ -27,6 +27,7 @@ class JourneyMapController {
     private var fitted = false
 
     internal fun attach(view: MapView, nativeMap: MapLibreMap) {
+        if (owner === view && map === nativeMap) return
         owner = view
         map = nativeMap
         fitted = false

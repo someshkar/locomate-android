@@ -279,8 +279,8 @@ fun SearchScreen(
                                 focus.clearFocus(); query = station.code
                                 selectedStationCode = station.code; selectedStationName = station.name
                             }, shape = RoundedCornerShape(20.dp), modifier = Modifier
-                                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
-                                .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                                .background(LM.Ink.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                                .border(1.dp, LM.Ink.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                                 .semantics { contentDescription = "Find trains at ${station.name}, ${station.code}" }) {
                                 Text(buildAnnotatedString {
                                     withStyle(SpanStyle(color = LM.Accent, fontFamily = PlexMono, fontWeight = FontWeight.SemiBold)) { append(station.code) }

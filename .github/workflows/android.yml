@@ -42,10 +42,14 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@v4
       - name: Enable emulator hardware acceleration
+        # Compile against 36 even when the runtime matrix entry is 31.
+        # setup-android accepts licenses; install the SDK before launching the emulator.
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Run instrumentation on the supported floor and current SDK
         uses: reactivecircus/android-emulator-runner@v2
         with:

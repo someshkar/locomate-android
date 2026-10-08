@@ -78,6 +78,8 @@ import app.locomate.data.PrivacyDataManager
 import app.locomate.data.CommunityConsent
 import app.locomate.data.CommunityPreferences
 import app.locomate.data.CommunityQueue
+import app.locomate.data.PhysicalReportQueue
+import app.locomate.data.PhysicalReportSyncWork
 import app.locomate.data.CommunitySync
 import app.locomate.data.CommunityLocationFilter
 import app.locomate.data.CommunityLocationService
@@ -497,6 +499,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
         } else Crossfade(targetState = tab, label = "primary tab") { current ->
             when (current) {
                 Tab.Journeys -> JourneyScreen(
+                    onRelatedJourney = { train, date -> JourneyAlertLink.fromRunId("$train:$date")?.let(::openDatedJourney) },
                     route = selectedRoute,
                     bottomInset = dockInset,
                     railGateway = gateway,
@@ -590,6 +593,7 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                 Tab.Explore -> ExploreScreen(selectedRoute, gateway, bottomInset = dockInset,
                     onOpenJourney = ::openDatedJourney)
                 Tab.Passport -> if (settingsOpen) SettingsScreen(
+                    railGateway = gateway,
                     alertSubscriptions = alertSubscriptions,
                     alertReadError = alertReadError,
                     alertNotice = alertNotice,
@@ -633,7 +637,11 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                     },
                     onContributionRevoke = {
                         CommunityLocationService.stop(context)
-                        val persisted = runCatching { contributionPreferences.revoke() }.isSuccess
+                        PhysicalReportSyncWork.cancel(context)
+                        val persisted = runCatching {
+                            PhysicalReportQueue(context, gateway.sourceUrl).clear()
+                            contributionPreferences.revoke()
+                        }.isSuccess
                         contributionEnabled = contributionPreferences.enabled
                         contributionBackground = contributionPreferences.background
                         if (!persisted) {
@@ -744,7 +752,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                             if (previewRoute == null) {
                                 passportNotice = "This historical route pack is no longer available. Your saved summary remains on this device."
                             } else {
-                                val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
+                                val savedPlan = saved.personalPlan ?: JourneyPlan(saved.originCode, saved.destinationCode,
+                                    planStore.load(previewRoute).coach, planStore.load(previewRoute).seat)
                                 if (savedPlan.isValidFor(previewRoute)) planStore.save(previewRoute, savedPlan)
                                 planVersion++
                                 passportNotice = null
@@ -763,7 +772,8 @@ fun RootView(launchRevision: Int = 0, onDataReset: () -> Unit = {}, railGateway:
                                 try {
                                     val loaded = gateway.journey(saved.trainNumber, saved.originDate)
                                     if (selectionEpoch != selectedEpoch) return@launch
-                                    val savedPlan = JourneyPlan(saved.originCode, saved.destinationCode)
+                                    val savedPlan = saved.personalPlan ?: JourneyPlan(saved.originCode, saved.destinationCode,
+                                        planStore.load(loaded).coach, planStore.load(loaded).seat)
                                     if (savedPlan.isValidFor(loaded)) planStore.save(loaded, savedPlan)
                                     planVersion++
                                     liveRoute = loaded
@@ -852,8 +862,8 @@ internal fun NavigationScaffold(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> 
 fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier, searchActive: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     val fallback = Brush.verticalGradient(listOf(LM.DockTop, LM.DockBottom))
-    val lens = Brush.verticalGradient(listOf(Color(0xFF12131B).copy(alpha = 0.42f),
-        Color(0xFF12131B).copy(alpha = 0.26f)))
+    val lens = Brush.verticalGradient(listOf(LM.Elevated.copy(alpha = 0.42f),
+        LM.Elevated.copy(alpha = 0.26f)))
     Row(modifier.widthIn(max = 330.dp), verticalAlignment = Alignment.CenterVertically) {
         Surface(
             color = Color.Transparent,
@@ -884,7 +894,7 @@ fun CapsuleNavBar(tab: Tab, onTab: (Tab) -> Unit, onSearch: () -> Unit, modifier
         ) {
             DockGlassSurface(Modifier.dockRim(30f)) { glass ->
                 Box(Modifier.fillMaxSize().background(if (glass) lens else fallback), contentAlignment = Alignment.Center) {
-                    Icon(painterResource(R.drawable.navigation_search), contentDescription = null, tint = Color.White, modifier = Modifier.size(23.dp))
+                    Icon(painterResource(R.drawable.navigation_search), contentDescription = null, tint = LM.Ink, modifier = Modifier.size(23.dp))
                 }
             }
         }
@@ -902,9 +912,9 @@ private fun NavItem(
 ) {
     val active = item == selected
     val showLabel = LocalDensity.current.fontScale < 1.8f
-    val color by animateColorAsState(if (active) Color.White else LM.DockLabel, label = "nav ink")
+    val color by animateColorAsState(if (active) LM.Ink else LM.DockLabel, label = "nav ink")
     val container by animateColorAsState(
-        if (active) Color.White.copy(alpha = 0.07f) else Color.Transparent,
+        if (active) LM.Ink.copy(alpha = 0.07f) else Color.Transparent,
         animationSpec = spring(),
         label = "nav selection"
     )

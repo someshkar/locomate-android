@@ -1,5 +1,6 @@
 package app.locomate.ui
 
+import app.locomate.ui.theme.LM
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.RenderEffect
@@ -57,6 +58,7 @@ internal fun DockGlassSurface(modifier: Modifier = Modifier, content: @Composabl
     val backdrop = LocalDockBackdrop.current
     val map = LocalMapGlass.current?.snapshot
     var bounds by remember { mutableStateOf(Rect.Zero) }
+    val ground = LM.Ground
     val density = LocalDensity.current.density
     val lens = remember(density) { DockLens(density) }
     val available = backdrop != null && backdrop.bounds.overlaps(bounds)
@@ -66,7 +68,7 @@ internal fun DockGlassSurface(modifier: Modifier = Modifier, content: @Composabl
             Canvas(Modifier.matchParentSize().graphicsLayer {
                 renderEffect = lens.effect(size, page.revision)
             }) {
-                drawRect(Color(0xFF060708))
+                drawRect(ground)
                 // SurfaceView's GL pixels are outside Compose's recorded drawing commands.
                 if (map != null && map.bounds.overlaps(bounds)) {
                     drawImage(map.image,
@@ -83,9 +85,12 @@ internal fun DockGlassSurface(modifier: Modifier = Modifier, content: @Composabl
 }
 
 /** A quiet inset rim. Kept outside the backdrop effect with the icons and captions. */
-internal fun Modifier.dockRim(radius: Float) = drawWithCache {
-    val rim = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.3f),
-        Color.White.copy(alpha = 0.08f), Color.Black.copy(alpha = 0.22f)))
+@Composable
+internal fun Modifier.dockRim(radius: Float): Modifier {
+    val ink = LM.Ink
+    return drawWithCache {
+    val rim = Brush.verticalGradient(listOf(ink.copy(alpha = 0.3f),
+        ink.copy(alpha = 0.08f), Color.Black.copy(alpha = 0.22f)))
     val stroke = 1.dp.toPx()
     onDrawWithContent {
         drawContent()
@@ -93,6 +98,8 @@ internal fun Modifier.dockRim(radius: Float) = drawWithCache {
             size = Size((size.width - stroke).coerceAtLeast(0f), (size.height - stroke).coerceAtLeast(0f)),
             cornerRadius = CornerRadius(radius.dp.toPx()), style = Stroke(stroke))
     }
+}
+
 }
 
 private class DockLens(density: Float) {

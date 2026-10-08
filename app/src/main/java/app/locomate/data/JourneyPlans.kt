@@ -4,7 +4,8 @@ import android.content.Context
 import app.locomate.BuildConfig
 import org.json.JSONObject
 
-data class JourneyPlan(val boardingCode: String, val alightingCode: String) {
+data class JourneyPlan(val boardingCode: String, val alightingCode: String,
+                       val coach: String = "", val seat: String = "") {
     companion object {
         fun default(route: RoutePreview): JourneyPlan =
             JourneyPlan(route.calls.firstOrNull()?.code ?: route.originCode,
@@ -14,7 +15,15 @@ data class JourneyPlan(val boardingCode: String, val alightingCode: String) {
     fun isValidFor(route: RoutePreview): Boolean {
         val board = route.calls.indexOfFirst { it.code == boardingCode }
         val leave = route.calls.indexOfFirst { it.code == alightingCode }
-        return board >= 0 && leave > board
+        return board >= 0 && leave > board && validPrivateDetails
+    }
+
+    val validPrivateDetails: Boolean get() = coach.length <= 16 && seat.length <= 24 &&
+        coach.all { it.isLetterOrDigit() || it in " -" } && seat.all { it.isLetterOrDigit() || it in " /-" }
+
+    fun isWholeRun(route: RoutePreview): Boolean {
+        val default = default(route)
+        return boardingCode == default.boardingCode && alightingCode == default.alightingCode
     }
 }
 
@@ -31,7 +40,8 @@ class JourneyPlanStore(context: Context) {
             ?: return default
         return runCatching {
             val json = JSONObject(value)
-            JourneyPlan(json.getString("boarding"), json.getString("alighting"))
+            JourneyPlan(json.getString("boarding"), json.getString("alighting"),
+                json.optString("coach"), json.optString("seat"))
         }.getOrNull()?.takeIf { it.isValidFor(route) } ?: default
     }
 
@@ -40,6 +50,8 @@ class JourneyPlanStore(context: Context) {
         prefs.edit().putString(key(route), JSONObject()
             .put("boarding", plan.boardingCode)
             .put("alighting", plan.alightingCode)
+            .put("coach", plan.coach.trim())
+            .put("seat", plan.seat.trim())
             .toString()).apply()
     }
 

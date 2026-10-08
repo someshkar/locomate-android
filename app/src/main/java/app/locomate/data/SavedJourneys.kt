@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 
-/** Private, on-device journey summary; no PNR, seat, or precise location. */
+/** Private, on-device journey summary and optional personal coach/seat plan; never uploaded. */
 data class SavedJourney(
     val key: String,
     val trainNumber: String,
@@ -20,6 +20,7 @@ data class SavedJourney(
     val durationMinutes: Int,
     val preview: Boolean,
     val durationMillis: Long? = null,
+    val personalPlan: JourneyPlan? = null,
 ) {
     val scheduledDurationMillis: Long? get() = durationMillis?.takeIf { it > 0 }
         ?: durationMinutes.takeIf { it > 0 }?.toLong()?.times(60_000)
@@ -58,6 +59,7 @@ data class SavedJourney(
             durationMinutes = duration,
             preview = route.isPreview,
             durationMillis = exactDuration,
+            personalPlan = validPlan.takeIf { it.coach.isNotBlank() || it.seat.isNotBlank() },
         )
         }
     }
@@ -132,6 +134,11 @@ class SavedJourneyStore(context: Context) {
                 durationMinutes = item.optInt("durationMinutes", 0),
                 preview = item.optBoolean("preview", false),
                 durationMillis = item.optLong("durationMillis").takeIf { it > 0 },
+                personalPlan = item.optJSONObject("personalPlan")?.let { plan ->
+                    JourneyPlan(item.getString("originCode"), item.getString("destinationCode"),
+                        plan.optString("coach"), plan.optString("seat"))
+                        .takeIf { it.validPrivateDetails }
+                },
             )
         }
         if (scoped == null && scope == "preview") parsed.filter(SavedJourney::preview).also(::save)
@@ -154,6 +161,8 @@ class SavedJourneyStore(context: Context) {
                 put("durationMinutes", journey.durationMinutes)
                 put("durationMillis", journey.durationMillis)
                 put("preview", journey.preview)
+                journey.personalPlan?.let { plan -> put("personalPlan", JSONObject()
+                    .put("coach", plan.coach).put("seat", plan.seat)) }
             })
         }
         preferences.edit().putString("journeys_v1", array.toString()).apply()

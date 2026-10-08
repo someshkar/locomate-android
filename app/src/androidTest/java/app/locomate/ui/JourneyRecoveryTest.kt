@@ -439,7 +439,7 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000, priva
                         path == "/v1/network/trains" -> network()
                         path == "/v1/auth/device-session" -> """{"accessToken":"fixture-only","expiresIn":3600}"""
                         path == "/v1/trains/search" -> """{"trains":[{"number":"12951","name":"Recovery Express","originCode":"AAA","originName":"Origin","destinationCode":"BBB","destinationName":"Destination","live":false}]}"""
-                        path.startsWith("/v1/runs/") -> journey(path.split('/')[3])
+                        path.startsWith("/v1/runs/") -> journey(path.split('/')[3], path.split('/')[4])
                         else -> "{}"
                     }.toByteArray()
                     connection.getOutputStream().apply {
@@ -472,11 +472,12 @@ private class RecoveryGateway(private val networkTtlMillis: Long = 60_000, priva
         ]}"""
     }
 
-    private fun journey(number: String) = """{
+    private fun journey(number: String, date: String) = """{
       "journey": {
-        "trainNumber":"$number","trainName":"${if (number == "12137") "New Link Express" else "Recovery Express"}",
+        "id":"run:$number:$date","travelDate":"$date","trainNumber":"$number","trainName":"${if (number == "12137") "New Link Express" else "Recovery Express"}",
         "originCode":"AAA","originName":"Origin","destinationCode":"BBB","destinationName":"Destination",
         "departureTime":"12:00","scheduledArrival":"15:00","scheduledDurationMinutes":180,"distanceKm":120,
+        "routeCoordinates":[{"latitude":19,"longitude":73},{"latitude":28,"longitude":77}],
         "stops":[{"code":"AAA","name":"Origin","scheduledDeparture":"12:00"},{"code":"BBB","name":"Destination","scheduledArrival":"15:00"}],
         "prediction":{"source":"scheduled"},"provenance":{"freshness":"scheduled","providerLabel":"Local recovery fixture"}
       }

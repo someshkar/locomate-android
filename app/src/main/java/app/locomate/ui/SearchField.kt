@@ -40,8 +40,8 @@ internal fun SearchField(value: String, onValue: (String) -> Unit, loading: Bool
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
         modifier = Modifier.fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.09f), RoundedCornerShape(18.dp))
+            .background(LM.Ink.copy(alpha = 0.05f), RoundedCornerShape(18.dp))
+            .border(1.dp, LM.Ink.copy(alpha = 0.09f), RoundedCornerShape(18.dp))
             .semantics { contentDescription = "Train no. or station" },
         decorationBox = { input ->
             Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp),

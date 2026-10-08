@@ -21,14 +21,44 @@ android {
         val mapStyleUrl = providers.gradleProperty("LOCOMATE_MAP_STYLE_URL").orNull
             ?: "https://tiles.openfreemap.org/styles/dark"
         val mapStyleUri = URI(mapStyleUrl)
-        require(mapStyleUri.scheme == "https" && !mapStyleUri.host.isNullOrBlank() && mapStyleUri.userInfo == null) {
+        require(mapStyleUri.scheme == "https" && !mapStyleUri.host.isNullOrBlank() && mapStyleUri.userInfo == null && mapStyleUri.fragment == null) {
             "LOCOMATE_MAP_STYLE_URL must be an HTTPS MapLibre style URL without embedded user credentials."
         }
+        val dayStyleUrl = providers.gradleProperty("LOCOMATE_MAP_DAY_STYLE_URL").orNull
+            ?: "https://tiles.openfreemap.org/styles/positron"
+        val satelliteStyleUrl = providers.gradleProperty("LOCOMATE_MAP_SATELLITE_STYLE_URL").orNull.orEmpty()
+        for (style in listOf(dayStyleUrl, satelliteStyleUrl).filter { it.isNotBlank() }) {
+            val uri = URI(style)
+            require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.fragment == null) { "Map styles must be HTTPS URLs without user credentials or fragments" }
+        }
+        buildConfigField("String", "MAP_DAY_STYLE_URL", "\"${dayStyleUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        buildConfigField("String", "MAP_SATELLITE_STYLE_URL", "\"${satelliteStyleUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         buildConfigField("String", "MAP_STYLE_URL", "\"${mapStyleUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         buildConfigField("String", "FCM_PROJECT_ID", "\"${providers.gradleProperty("LOCOMATE_FCM_PROJECT_ID").orNull.orEmpty()}\"")
         buildConfigField("String", "FCM_APP_ID", "\"${providers.gradleProperty("LOCOMATE_FCM_APP_ID").orNull.orEmpty()}\"")
         buildConfigField("String", "FCM_API_KEY", "\"${providers.gradleProperty("LOCOMATE_FCM_API_KEY").orNull.orEmpty()}\"")
         buildConfigField("String", "FCM_SENDER_ID", "\"${providers.gradleProperty("LOCOMATE_FCM_SENDER_ID").orNull.orEmpty()}\"")
+    }
+
+    val uploadStorePath = providers.environmentVariable("LOCOMATE_ANDROID_KEYSTORE_PATH").orNull
+    val uploadPasswordPath = providers.environmentVariable("LOCOMATE_ANDROID_KEYSTORE_PASSWORD_FILE").orNull
+    val uploadAlias = providers.environmentVariable("LOCOMATE_ANDROID_KEY_ALIAS").orNull
+    val uploadKeyPasswordPath = providers.environmentVariable("LOCOMATE_ANDROID_KEY_PASSWORD_FILE").orNull
+    val hasUploadSigning = listOf(uploadStorePath, uploadPasswordPath, uploadAlias, uploadKeyPasswordPath).any { it != null }
+    if (hasUploadSigning) {
+        require(!uploadStorePath.isNullOrBlank() && !uploadPasswordPath.isNullOrBlank() && !uploadAlias.isNullOrBlank()) {
+            "Release signing requires the keystore path, password-file path and key alias environment variables"
+        }
+        signingConfigs.create("upload") {
+            storeFile = file(requireNotNull(uploadStorePath))
+            storeType = "PKCS12"
+            storePassword = file(requireNotNull(uploadPasswordPath)).readText().trimEnd('\r', '\n')
+            keyAlias = uploadAlias
+            keyPassword = file(uploadKeyPasswordPath ?: requireNotNull(uploadPasswordPath)).readText().trimEnd('\r', '\n')
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
+        }
     }
 
     buildTypes {
@@ -37,7 +67,10 @@ android {
             buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
         }
         release {
-            isMinifyEnabled = false
+            if (hasUploadSigning) signingConfig = signingConfigs.getByName("upload")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             val railApiUrl = providers.gradleProperty("LOCOMATE_RAIL_API_URL").orNull
                 ?: "https://rail-intelligence-gateway.rail-intelligence-gateway.workers.dev"
             buildConfigField("String", "RAIL_API_URL", "\"$railApiUrl\"")
@@ -46,6 +79,9 @@ android {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
+            if (providers.gradleProperty("LOCOMATE_BENCHMARK_PREVIEW").orNull == "true") {
+                buildConfigField("String", "RAIL_API_URL", "\"\"")
+            }
         }
     }
 

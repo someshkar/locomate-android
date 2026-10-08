@@ -142,7 +142,7 @@ fun ExploreScreen(route: RoutePreview?, gateway: RailGateway, bottomInset: Dp = 
                 letterSpacing = (-1.2).sp, modifier = Modifier.semantics { heading() })
             Text(if (gateway.configured) "The network, live" else "The network, in preview",
                 color = LM.Ink2, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
-            if (!gateway.configured) Text("PREVIEW", color = Color(0xFFBCA7FF),
+            if (!gateway.configured) Text("PREVIEW", color = LM.Replay,
                 fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
             if (gateway.configured && largeText) NetworkTrainListButton(snapshot != null && !expired) {
                 listing = NetworkListScope.All

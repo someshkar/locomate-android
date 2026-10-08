@@ -50,6 +50,6 @@ internal fun SearchResultRow(number: String, name: String, originCode: String, d
             Box(Modifier.weight(1f)) { details() }
             provenance()
         }
-        if (showSeparator) HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+        if (showSeparator) HorizontalDivider(color = LM.Ink.copy(alpha = 0.05f))
     }
 }
