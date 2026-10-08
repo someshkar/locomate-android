@@ -18,13 +18,21 @@ class ConfiguredGatewaySmokeTest {
         val url = arguments.getString("gatewaySmokeUrl").orEmpty()
         assumeTrue("Set gatewaySmokeUrl to run the external native HTTP smoke", url.isNotBlank())
         val writes = arguments.getString("gatewaySmokeWrites") == "true"
+        val authOnly = arguments.getString("gatewaySmokeAuthOnly") == "true"
+        require(!authOnly || !writes)
         require(!writes || java.net.URI(url).host in setOf("127.0.0.1", "localhost", "10.0.2.2"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val prefs = context.getSharedPreferences("locomate.installation", Context.MODE_PRIVATE)
         val original = prefs.all
+        var gateway: RailGateway? = null
         try {
             check(prefs.edit().clear().putString("id", UUID.randomUUID().toString()).commit())
-            val gateway = RailGateway(context, url)
+            val nativeGateway = RailGateway(context, url).also { gateway = it }
+            if (authOnly) {
+                nativeGateway.exportPrivacyData()
+                return@runBlocking
+            }
+            val gateway = nativeGateway
             val date = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString()
             assertTrue(gateway.search("12137").any { it.number == "12137" })
             val route = gateway.journey("12137", date)
@@ -62,8 +70,9 @@ class ConfiguredGatewaySmokeTest {
                 val exported = gateway.exportPrivacyData()
                 assertTrue(exported.toString().contains("123456"))
             }
-            gateway.deletePrivacyData()
         } finally {
+            // Cleanup must also run after a failed provider read; never leave a test installation behind.
+            val cleanup = runCatching { gateway?.deletePrivacyData() }
             val editor = prefs.edit().clear()
             original.forEach { (key, value) -> when (value) {
                 is String -> editor.putString(key, value)
@@ -74,6 +83,7 @@ class ConfiguredGatewaySmokeTest {
             check(editor.commit())
             File(context.filesDir, "rail-run-cache/${railStorageScope(url)}").deleteRecursively()
             File(context.filesDir, "community/${railStorageScope(url)}").deleteRecursively()
+            cleanup.getOrThrow()
         }
     }
 }
