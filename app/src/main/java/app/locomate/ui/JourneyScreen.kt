@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -122,6 +123,7 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
         val collapsedTop = if (route == null) minOf(standardCollapsedTop,
             with(density) { (maxHeight - 520.dp).toPx() }.coerceAtLeast(expandedTop)) else standardCollapsedTop
         val largeText = density.fontScale >= 1.5f
+        val compactHeight = maxHeight < 480.dp
         var sheetTop by remember(screenHeightPx, largeText, route == null) {
             mutableFloatStateOf(if (largeText) expandedTop else collapsedTop)
         }
@@ -234,21 +236,20 @@ fun JourneyScreen(route: RoutePreview?, plan: JourneyPlan? = null, saved: Boolea
                         Column {
                         if (route == null) {
                             Spacer(Modifier.height(15.dp))
+                            // In short windows the recovery action must be visible immediately;
+                            // the explanation remains in the ordinary scrollable sheet below it.
+                            if (compactHeight) {
+                                FindTrainAction(onSearch)
+                                Spacer(Modifier.height(24.dp))
+                            }
                             Text("Every journey starts here.", color = LM.Ink, fontSize = 29.sp,
                                 fontWeight = FontWeight.Bold, lineHeight = 33.sp)
                             Spacer(Modifier.height(12.dp))
                             Text(message ?: "Find a train and choose its India origin date to see the route, station times and source of every update.",
                                 color = LM.Ink2, fontSize = 15.sp, lineHeight = 22.sp)
-                            Spacer(Modifier.height(24.dp))
-                            Surface(onClick = onSearch, color = LM.Accent, shape = RoundedCornerShape(17.dp),
-                                modifier = Modifier.fillMaxWidth()) {
-                                Row(Modifier.padding(17.dp), horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.OnAccent,
-                                        modifier = Modifier.size(20.dp))
-                                    Text("Find your train", color = LM.OnAccent, fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
-                                }
+                            if (!compactHeight) {
+                                Spacer(Modifier.height(24.dp))
+                                FindTrainAction(onSearch)
                             }
                             Spacer(Modifier.height(24.dp))
                         } else {
@@ -460,6 +461,20 @@ private fun ScheduledDepartureCountdown(route: RoutePreview, plan: JourneyPlan?)
         Text("${if (route.statusLabel.startsWith("STALE")) "Saved timetable · " else ""}Scheduled boarding at ${boarding.stationCode}",
             color = LM.Ink2, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun FindTrainAction(onSearch: () -> Unit) {
+    Surface(onClick = onSearch, color = LM.Accent, shape = RoundedCornerShape(17.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Row(Modifier.padding(17.dp), horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Search, contentDescription = null, tint = LM.OnAccent,
+                modifier = Modifier.size(20.dp))
+            Text("Find your train", color = LM.OnAccent, fontWeight = FontWeight.Bold,
+                fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
+        }
     }
 }
 
